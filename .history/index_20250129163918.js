@@ -7,7 +7,6 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const movieRoutes = require('./routes/movieRoutes');
 const showtimeRoutes = require('./routes/showtimeRoutes');
-const bookingRoutes = require('./routes/bookingRoutes');
 
 dotenv.config();
 

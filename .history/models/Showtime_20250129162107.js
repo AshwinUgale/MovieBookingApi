@@ -4,8 +4,8 @@ const ShowtimeSchema = new mongoose.Schema({
     movie: { type: mongoose.Schema.Types.ObjectId, ref: 'Movie', required: true },
     theater: { type: String, required: true },
     showtime: { type: Date, required: true },
-    availableSeats: [{ type: Number, required: true }], 
-    version: { type: Number, default: 0 }, 
+    availableSeats: [{ type: Number, required: true }], // Array of seat numbers
+    version: { type: Number, default: 0 }, // Optimistic locking version control
     createdAt: { type: Date, default: Date.now }
 });
 
