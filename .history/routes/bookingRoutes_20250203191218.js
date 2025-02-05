@@ -10,10 +10,9 @@ router.post('/', auth, createBooking);
 router.get('/', auth, getAllBookings);
 
 
-router.get('/history', auth, getUserBookings);
-
 router.get('/:id', auth, getBookingById);
 
+router.get('/history', auth, getUserBookings);
 
 router.delete('/:id', auth, cancelBooking);
 

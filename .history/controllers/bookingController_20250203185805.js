@@ -2,69 +2,6 @@ const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Showtime = require('../models/Showtime');
 const redisClient = require('../config/redis');
-const sendEmail = require('../utils/emailService');
-const User = require('../models/User');
-
-
-
-exports.cancelBooking = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        // ✅ Populate 'user' field to get the email
-        const booking = await Booking.findById(id).populate({
-            path: 'user',
-            select: 'email' // Fetch only the email field
-        });
-
-        if (!booking) {
-            return res.status(404).json({ message: "Booking not found" });
-        }
-
-        console.log("🟡 DEBUG: Booking Found:", booking); // Debugging
-        console.log("🟡 DEBUG: User in Booking:", booking.user); // Check if user is populated
-
-        if (!booking.user || !booking.user.email) {
-            console.error("❌ Error: No recipient email provided.");
-            return res.status(400).json({ message: "User email is required." });
-        }
-
-        const userEmail = booking.user.email;
-        console.log("📩 Sending cancellation email to:", userEmail); // Debug log
-
-        if (booking.canceled) {
-            return res.status(400).json({ message: "Booking already canceled" });
-        }
-
-        booking.canceled = true;
-        booking.paymentStatus = "refunded"; 
-        await booking.save();
-
-        sendEmail(userEmail, "Booking Cancellation", `Your booking ${booking._id} has been canceled. Refund will be processed shortly.`);
-
-        res.status(200).json({ message: "Booking canceled and refunded", booking });
-
-    } catch (error) {
-        console.error("🚨 Error canceling booking:", error);
-        res.status(500).json({ message: "Server error" });
-    }
-};
-
-
-exports.getUserBookings = async (req, res) => {
-    try {
-        const userId = req.user.id;
-
-        const bookings = await Booking.find({ user: userId })
-            .populate('showtime')
-            .sort({ createdAt: -1 });
-
-        res.status(200).json(bookings);
-    } catch (error) {
-        console.error("Error fetching user bookings:", error);
-        res.status(500).json({ message: "Server error" });
-    }
-};
 
 
 
@@ -99,7 +36,6 @@ exports.createBooking = async (req, res) => {
     try {
         const { showtimeId, seats } = req.body;
         const userId = req.user ? req.user.id : null;
-        const userEmail = req.user.email;
 
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing" });
@@ -165,7 +101,6 @@ exports.createBooking = async (req, res) => {
         const booking = new Booking({ user: userId, showtime: showtimeId, seats, paymentStatus: "pending" });
         await booking.save();
 
-        sendEmail(userEmail, "Booking Confirmation", `Your booking for showtime ${showtime._id} is confirmed. Seats: ${seats.join(", ")}`);
         res.status(201).json({ message: "Booking successful", booking });
 
     } catch (error) {

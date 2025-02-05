@@ -1,20 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { createBooking, getAllBookings, getBookingById,getUserBookings,cancelBooking } = require('../controllers/bookingController');
+const { createBooking, getAllBookings, getBookingById } = require('../controllers/bookingController');
 const { auth } = require('../middleware/authMiddleware');
 
-
+// ✅ Create a booking
 router.post('/', auth, createBooking);
 
-
+// ✅ Get all bookings (for authorized users)
 router.get('/', auth, getAllBookings);
 
-
-router.get('/history', auth, getUserBookings);
-
+// ✅ Get a single booking by ID
 router.get('/:id', auth, getBookingById);
-
-
-router.delete('/:id', auth, cancelBooking);
 
 module.exports = router;
