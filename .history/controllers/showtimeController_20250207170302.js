@@ -19,7 +19,7 @@ exports.getShowtimes = async (req, res) => {
 
 // Create a new showtime
 exports.createShowtime = async (req, res) => {
-    let { movie, theater, showtime, availableSeats } = req.body;
+    const { movie, theater, showtime, availableSeats } = req.body;
     try {
         // Validate required fields
         if (!movie || !theater || !showtime || availableSeats == null) {

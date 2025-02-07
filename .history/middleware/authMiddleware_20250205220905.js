@@ -13,7 +13,7 @@ exports.auth = async (req,res,next) =>{
         req.user = user;
         next();
     } catch (error) {
-        
+        console.error("Middleware Error:", error.message);
         res.status(401).json({ message: 'Unauthorized' });
     }
 };
