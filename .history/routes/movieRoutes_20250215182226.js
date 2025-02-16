@@ -3,9 +3,9 @@ const router = express.Router();
 const {
     getMovies,
     getMovieById,
+    createMovie,
     updateMovie,
-    deleteMovie,
-    fetchMoviesFromAPI
+    deleteMovie
 } = require('../controllers/movieController');
 const { adminAuth } = require('../middleware/authMiddleware'); // Admin-only middleware
 
@@ -17,6 +17,5 @@ router.get('/:id', getMovieById); // Anyone can view a specific movie
 
 router.put('/:id', adminAuth, updateMovie); // Only admins can update movies
 router.delete('/:id', adminAuth, deleteMovie); // Only admins can delete movies
-router.post('/fetch-movies', adminAuth, fetchMoviesFromAPI);
 
 module.exports = router;

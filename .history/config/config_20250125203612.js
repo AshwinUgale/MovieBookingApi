@@ -6,6 +6,4 @@ module.exports = {
     port: process.env.PORT || 5000,
     mongoURI: process.env.MONGO_URI,
     jwtSecret: process.env.JWT_SECRET,
-    TMDB_API_KEY: process.env.TMDB_API_KEY,
-  TMDB_ACCESS_TOKEN: process.env.TMDB_ACCESS_TOKEN
 };
