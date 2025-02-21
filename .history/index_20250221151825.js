@@ -11,7 +11,7 @@ const movieRoutes = require('./routes/movieRoutes');
 const showtimeRoutes = require('./routes/showtimeRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-const ticketmasterRoutes = require("./routes/ticketmasterRoutes");
+
 dotenv.config();
 
 

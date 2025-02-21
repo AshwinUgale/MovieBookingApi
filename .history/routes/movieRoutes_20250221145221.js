@@ -11,7 +11,10 @@ const {
 } = require('../controllers/movieController');
 const { adminAuth } = require('../middleware/authMiddleware'); // Admin-only middleware
 
-router.get('/genres',getMovieGenres);
+router.get("/genres", (req, res, next) => {
+    console.log("✅ /api/movies/genres route hit! Passing to controller...");
+    getMovieGenres(req, res, next);
+});
 // Public Routes
 router.get('/', getMovies); // Anyone can view all movies
 router.get('/:id', getMovieById); // Anyone can view a specific movie

@@ -11,7 +11,7 @@ const movieRoutes = require('./routes/movieRoutes');
 const showtimeRoutes = require('./routes/showtimeRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-const ticketmasterRoutes = require("./routes/ticketmasterRoutes");
+
 dotenv.config();
 
 
@@ -32,7 +32,6 @@ app.use('/api/movies', movieRoutes);
 app.use('/api/showtimes',showtimeRoutes);
 app.use('/api/bookings', bookingRoutes); 
 app.use('/api/payments', paymentRoutes);
-app.use("/api/ticketmaster", ticketmasterRoutes);
 
 app.use((req, res, next) => {
     res.status(404).json({ message: 'Route not found' });
@@ -40,7 +39,10 @@ app.use((req, res, next) => {
 
 // Error Handling Middleware
 app.use(errorHandler);
-
+app.get("/test", (req, res) => {
+    console.log("✅ /test endpoint was hit!");
+    res.json({ message: "Test route is working!" });
+});
 
 
 

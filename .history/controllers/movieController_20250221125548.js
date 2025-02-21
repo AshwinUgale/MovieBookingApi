@@ -1,37 +1,7 @@
 const axios = require("axios");
 const Movie = require("../models/Movie");
 const config = require("../config/config");
-const { fetchMoviesFromAPI, fetchGenres } = require("../services/tmdbService");
 
-/**
- * @route GET /api/movies/popular
- * @desc Fetch movies from TMDB and store in MongoDB
- */
-exports.loadMoviesFromTMDB = async (req, res) => {
-    try {
-        const result = await fetchMoviesFromAPI();
-        res.status(200).json(result);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-/**
- * @route GET /api/movies/genres
- * @desc Fetch genres from TMDB
- */
-exports.getMovieGenres = async (req, res) => {
-    console.log("📌 Received request for /api/movies/genres");
-    try {
-        console.log("📌 Received request for /api/movies/genres");
-        const genres = await fetchGenres();
-        console.log("✅ Genres fetched successfully:", genres);
-        res.status(200).json(genres);
-    } catch (error) {
-        console.error("🚨 Error in getMovieGenres:", error);
-        res.status(500).json({ message: error.message });
-    }
-};
 
 
 // ✅ GET /api/movies → Get all movies (with filters & sorting)

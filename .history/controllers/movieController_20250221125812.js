@@ -21,14 +21,10 @@ exports.loadMoviesFromTMDB = async (req, res) => {
  * @desc Fetch genres from TMDB
  */
 exports.getMovieGenres = async (req, res) => {
-    console.log("📌 Received request for /api/movies/genres");
     try {
-        console.log("📌 Received request for /api/movies/genres");
         const genres = await fetchGenres();
-        console.log("✅ Genres fetched successfully:", genres);
         res.status(200).json(genres);
     } catch (error) {
-        console.error("🚨 Error in getMovieGenres:", error);
         res.status(500).json({ message: error.message });
     }
 };
