@@ -5,7 +5,7 @@ const { auth } = require('../middleware/authMiddleware');
 
 
 router.post('/', auth, createBooking);
-router.post('/event', auth, createEventBooking);
+router.post("/event", auth, createEventBooking);
 
 router.get('/', auth, getAllBookings);
 

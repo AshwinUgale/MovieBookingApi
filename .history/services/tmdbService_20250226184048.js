@@ -39,6 +39,8 @@ const fetchGenres = async () => {
   }
 };
 
+export default fetchGenres;
+
 /**
  * Fetch movies from TMDb and store them in MongoDB
  */

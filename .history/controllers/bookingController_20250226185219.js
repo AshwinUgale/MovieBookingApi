@@ -54,25 +54,23 @@ exports.createEventBooking = async (req, res) => {
 
 
 
-const Booking = require("../models/Booking");
-const sendEmail = require("../utils/emailService");
 
 exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // ✅ Fetch booking details and populate 'user' field for email
+        // ✅ Populate 'user' field to get the email
         const booking = await Booking.findById(id).populate({
-            path: "user",
-            select: "email"
+            path: 'user',
+            select: 'email' // Fetch only the email field
         });
 
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        console.log("🟡 DEBUG: Booking Found:", booking);
-        console.log("🟡 DEBUG: User in Booking:", booking.user);
+        console.log("🟡 DEBUG: Booking Found:", booking); // Debugging
+        console.log("🟡 DEBUG: User in Booking:", booking.user); // Check if user is populated
 
         if (!booking.user || !booking.user.email) {
             console.error("❌ Error: No recipient email provided.");
@@ -80,34 +78,17 @@ exports.cancelBooking = async (req, res) => {
         }
 
         const userEmail = booking.user.email;
-        console.log("📩 Sending cancellation email to:", userEmail);
+        console.log("📩 Sending cancellation email to:", userEmail); // Debug log
 
         if (booking.canceled) {
             return res.status(400).json({ message: "Booking already canceled" });
         }
 
-        // ✅ Update booking status
         booking.canceled = true;
         booking.paymentStatus = "refunded"; 
         await booking.save();
 
-        // ✅ Determine if it's a Movie or an Event
-        let subject = "";
-        let message = "";
-
-        if (booking.type === "movie") {
-            subject = "Movie Ticket Cancellation";
-            message = `Your movie booking (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
-        } else if (booking.type === "event") {
-            subject = "Event Ticket Cancellation";
-            message = `Your event ticket for **${booking.eventDetails.name}** at **${booking.eventDetails.venue}** has been canceled. Your refund is being processed.`;
-        } else {
-            subject = "Booking Cancellation";
-            message = `Your booking (ID: ${booking._id}) has been canceled. Your refund is being processed.`;
-        }
-
-        // ✅ Send cancellation email
-        sendEmail(userEmail, subject, message);
+        sendEmail(userEmail, "Booking Cancellation", `Your booking ${booking._id} has been canceled. Refund will be processed shortly.`);
 
         res.status(200).json({ message: "Booking canceled and refunded", booking });
 
@@ -116,7 +97,6 @@ exports.cancelBooking = async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 };
-
 
 
 exports.getUserBookings = async (req, res) => {

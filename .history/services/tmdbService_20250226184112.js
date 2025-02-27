@@ -8,7 +8,7 @@ const TMDB_GENRES_URL = "https://api.themoviedb.org/3/genre/movie/list?language=
 /**
  * Fetch genre names from TMDb
  */
-
+import axios from "axios";
 
 const fetchGenres = async () => {
   try {
@@ -38,6 +38,8 @@ const fetchGenres = async () => {
     return []; // Return an empty array instead of throwing an error
   }
 };
+
+export default fetchGenres;
 
 /**
  * Fetch movies from TMDb and store them in MongoDB
