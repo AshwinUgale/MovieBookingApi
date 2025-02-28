@@ -54,6 +54,8 @@ exports.createEventBooking = async (req, res) => {
 
 
 
+const sendEmail = require("../utils/emailService");
+
 exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
@@ -159,11 +161,12 @@ exports.getBookingById = async (req, res) => {
 
 
 
+
 exports.createBooking = async (req, res) => {
     try {
         const { showtimeId, seats } = req.body;
         const userId = req.user ? req.user.id : null;
-        const userEmail = req.user ? req.user.email : null;
+        const userEmail = req.user.email;
 
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing" });
@@ -174,26 +177,22 @@ exports.createBooking = async (req, res) => {
             return res.status(404).json({ message: "Showtime not found" });
         }
 
-        if (!seats || seats.length === 0) {
-            return res.status(400).json({ message: "No seats selected for booking" });
-        }
-
+       
         const invalidSeats = seats.filter(seat => !showtime.availableSeats.includes(seat));
         if (invalidSeats.length > 0) {
             return res.status(400).json({
-                message: `Invalid seat(s): ${invalidSeats.join(", ")}. Available seats: ${showtime.availableSeats.join(", ")}`,
+                message: `Invalid seat(s): ${invalidSeats.join(", ")}. Please select from available seats: ${showtime.availableSeats.join(", ")}`,
             });
         }
 
+  
         if (seats.length > showtime.availableSeats.length) {
-            return res.status(400).json({ message: `Not enough seats available. Only ${showtime.availableSeats.length} left.` });
+            return res.status(400).json({
+                message: `Not enough seats available. Only ${showtime.availableSeats.length} left.`,
+            });
         }
 
-        // ✅ Fix: Ensure `seats` exists before using it
-        if (!seats || !Array.isArray(seats)) {
-            return res.status(400).json({ message: "Invalid seats data" });
-        }
-
+        
         for (const seat of seats) {
             console.log(`🔍 Checking seat:`, seat);
             const seatKey = `seat:${showtimeId}:${seat}`;
@@ -207,11 +206,15 @@ exports.createBooking = async (req, res) => {
             await redisClient.set(seatKey, userId.toString(), { EX: 300 }); 
         }
 
+       
+
+      
         const unavailableSeats = seats.some(seat => !showtime.availableSeats.includes(seat));
         if (unavailableSeats) {
             return res.status(400).json({ message: "Some seats are already booked" });
         }
 
+    
         const oldVersion = showtime.version;
         showtime.availableSeats = showtime.availableSeats.filter(seat => !seats.includes(seat));
         showtime.version += 1;
@@ -226,15 +229,7 @@ exports.createBooking = async (req, res) => {
             return res.status(409).json({ message: "Booking conflict. Try again." });
         }
 
-        // ✅ Fix: Ensure `type: "movie"` is included in the booking object
-        const booking = new Booking({ 
-            user: userId, 
-            type: "movie",  // ✅ This ensures the type field is set correctly
-            showtime: showtimeId, 
-            seats, 
-            paymentStatus: "pending" 
-        });
-
+        const booking = new Booking({ user: userId, showtime: showtimeId, seats, paymentStatus: "pending" });
         await booking.save();
 
         sendEmail(userEmail, "Booking Confirmation", `Your booking for showtime ${showtime._id} is confirmed. Seats: ${seats.join(", ")}`);
@@ -243,15 +238,12 @@ exports.createBooking = async (req, res) => {
     } catch (error) {
         console.error("🚨 Booking Error:", error);
 
-        // ✅ Fix: Check if `seats` is defined before iterating over it
-        if (Array.isArray(seats)) {
-            for (const seat of seats) {
-                const seatKey = `seat:${showtimeId}:${seat}`;
-                await redisClient.del(seatKey);
-            }
+       
+        for (const seat of seats) {
+            const seatKey = `seat:${showtimeId}:${seat}`;
+            await redisClient.del(seatKey);
         }
 
         res.status(500).json({ message: "Server error" });
     }
 };
-
