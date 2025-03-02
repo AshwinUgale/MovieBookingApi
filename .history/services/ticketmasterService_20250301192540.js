@@ -31,7 +31,7 @@ const fetchEvents = async (city, category) => {
         }
 
         if (city) {
-            params.city = city;
+            params.city = city; // ✅ Only include city if provided
         }
 
         console.log("🔍 Ticketmaster API Request Params:", params);

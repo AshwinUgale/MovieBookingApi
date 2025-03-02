@@ -8,11 +8,11 @@ const { fetchEvents, fetchVenues } = require("../services/ticketmasterService");
  */
 exports.getEvents = async (req, res) => {
     try {
-        const { city, category } = req.query;
+        const { city, category } = req.query; // ✅ Make city optional
 
-        console.log(`📌 Fetching Ticketmaster events for city: ${city || "All"} in category: ${category || "All"}...`);
+        console.log(`📌 Fetching Ticketmaster events for ${city || "all cities"} in ${category || "all categories"}...`);
 
-        const events = await fetchEvents(city, category?.toLowerCase());
+        const events = await fetchEvents(city, category?.toLowerCase()); // ✅ Only send city if provided
         res.status(200).json(events);
     } catch (error) {
         console.error("🚨 ERROR in getEvents:", error.message);

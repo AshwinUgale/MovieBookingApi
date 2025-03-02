@@ -8,11 +8,10 @@ const { fetchEvents, fetchVenues } = require("../services/ticketmasterService");
  */
 exports.getEvents = async (req, res) => {
     try {
-        const { city, category } = req.query;
-
-        console.log(`📌 Fetching Ticketmaster events for city: ${city || "All"} in category: ${category || "All"}...`);
-
-        const events = await fetchEvents(city, category?.toLowerCase());
+        const { city = "New York", category } = req.query;
+        console.log(`📌 Fetching Ticketmaster events for ${city} in ${category} category...`);
+        
+        const events = await fetchEvents(city, category?.toLowerCase()); // ✅ Ensure lowercase category
         res.status(200).json(events);
     } catch (error) {
         console.error("🚨 ERROR in getEvents:", error.message);

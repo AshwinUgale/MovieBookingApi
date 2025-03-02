@@ -3,7 +3,7 @@ const config = require("../config/config");
 
 const TICKETMASTER_BASE_URL = "https://app.ticketmaster.com/discovery/v2";
 
-// Map category names to Ticketmaster segment IDs
+// Mapping category names to Ticketmaster segment IDs
 const categoryToSegmentId = {
     music: "KZFzniwnSyZfZ7v7nJ",
     sports: "KZFzniwnSyZfZ7v7nE",
@@ -13,42 +13,33 @@ const categoryToSegmentId = {
 };
 
 /**
- * Fetch events from Ticketmaster API
+ * Fetch events from Ticketmaster API using segments
  * @param {string} city - City name for event search
- * @param {string} [category] - Classification (music, sports, theatre, film, miscellaneous) - Optional
+ * @param {string} category - Classification (music, sports, theatre, film, miscellaneous)
  */
-const fetchEvents = async (city, category) => {
+const fetchEvents = async (city = "New York", category = "music") => {
     try {
-        console.log(`🎯 Fetching Ticketmaster events for city: ${city || "All"} and category: ${category || "All"}`);
+        console.log(`📌 Fetching ${category} events from Ticketmaster in ${city}...`);
+        console.log("🔑 Using API Key:", config.TICKETMASTER_API_KEY);
 
-        const params = {
-            apikey: process.env.TICKETMASTER_API_KEY,
-            size: 50
-        };
+        // Get segment ID from category
+        const segmentId = categoryToSegmentId[category.toLowerCase()] || categoryToSegmentId.music;
 
-        if (category && categoryToSegmentId[category]) {
-            params.segmentId = categoryToSegmentId[category];
-        }
-
-        if (city) {
-            params.city = city;
-        }
-
-        console.log("🔍 Ticketmaster API Request Params:", params);
-
-        const response = await axios.get(`${TICKETMASTER_BASE_URL}/events.json`, { params });
-
-        console.log("✅ Ticketmaster API Response:", response.data._embedded?.events?.length || 0, "events found");
+        const response = await axios.get(`${TICKETMASTER_BASE_URL}/events.json`, {
+            params: {
+                apikey: config.TICKETMASTER_API_KEY, // ✅ Correct API Key usage
+                city,
+                segmentId,  // 🎯 Using segment ID for filtering
+                size: 60, // Limit results
+            },
+        });
 
         return response.data._embedded?.events || [];
     } catch (error) {
-        console.error("❌ ERROR in fetchEvents:", error.response?.status, error.response?.data || error.message);
-        return [];
+        console.error("🚨 ERROR in fetchEvents:", error.response?.data || error.message);
+        throw new Error("Failed to fetch events from Ticketmaster");
     }
 };
-
-
-
 
 /**
  * Fetch venue details by city

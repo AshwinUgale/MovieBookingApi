@@ -15,35 +15,28 @@ const categoryToSegmentId = {
 /**
  * Fetch events from Ticketmaster API
  * @param {string} city - City name for event search
- * @param {string} [category] - Classification (music, sports, theatre, film, miscellaneous) - Optional
+ * @param {string} category - Classification (music, sports, theatre, film, miscellaneous)
  */
-const fetchEvents = async (city, category) => {
+const fetchEvents = async (city = "New York", category = "music") => {
     try {
-        console.log(`🎯 Fetching Ticketmaster events for city: ${city || "All"} and category: ${category || "All"}`);
+        console.log(`📌 Fetching ${category} events from Ticketmaster in ${city}...`);
 
-        const params = {
-            apikey: process.env.TICKETMASTER_API_KEY,
-            size: 50
-        };
+        // Get segment ID from category, default to "music"
+        const segmentId = categoryToSegmentId[category.toLowerCase()] || categoryToSegmentId.music;
 
-        if (category && categoryToSegmentId[category]) {
-            params.segmentId = categoryToSegmentId[category];
-        }
-
-        if (city) {
-            params.city = city;
-        }
-
-        console.log("🔍 Ticketmaster API Request Params:", params);
-
-        const response = await axios.get(`${TICKETMASTER_BASE_URL}/events.json`, { params });
-
-        console.log("✅ Ticketmaster API Response:", response.data._embedded?.events?.length || 0, "events found");
+        const response = await axios.get(`${TICKETMASTER_BASE_URL}/events.json`, {
+            params: {
+                apikey: config.TICKETMASTER_API_KEY,
+                city,
+                segmentId, // ✅ Correctly filtering by segment ID
+                size: 60,
+            },
+        });
 
         return response.data._embedded?.events || [];
     } catch (error) {
-        console.error("❌ ERROR in fetchEvents:", error.response?.status, error.response?.data || error.message);
-        return [];
+        console.error("🚨 ERROR in fetchEvents:", error.response?.data || error.message);
+        throw new Error("Failed to fetch events from Ticketmaster");
     }
 };
 

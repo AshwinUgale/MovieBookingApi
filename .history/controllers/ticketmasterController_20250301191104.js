@@ -8,18 +8,17 @@ const { fetchEvents, fetchVenues } = require("../services/ticketmasterService");
  */
 exports.getEvents = async (req, res) => {
     try {
-        const { city, category } = req.query;
+        const { city = "New York", category } = req.query; // ❌ No default category
 
-        console.log(`📌 Fetching Ticketmaster events for city: ${city || "All"} in category: ${category || "All"}...`);
-
-        const events = await fetchEvents(city, category?.toLowerCase());
+        console.log(`📌 Fetching Ticketmaster events for ${city} in ${category || "all categories"}...`);
+        
+        const events = await fetchEvents(city, category?.toLowerCase()); // ✅ Allow all categories if none provided
         res.status(200).json(events);
     } catch (error) {
         console.error("🚨 ERROR in getEvents:", error.message);
         res.status(500).json({ message: "Failed to fetch events" });
     }
 };
-
 /**
  * @route GET /api/ticketmaster/venues
  * @desc Get venues from Ticketmaster

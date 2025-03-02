@@ -17,33 +17,27 @@ const categoryToSegmentId = {
  * @param {string} city - City name for event search
  * @param {string} [category] - Classification (music, sports, theatre, film, miscellaneous) - Optional
  */
-const fetchEvents = async (city, category) => {
+const fetchEvents = async (city = "New York", category) => {
     try {
-        console.log(`🎯 Fetching Ticketmaster events for city: ${city || "All"} and category: ${category || "All"}`);
+        console.log(`📌 Fetching ${category || "all"} events from Ticketmaster in ${city}...`);
 
         const params = {
-            apikey: process.env.TICKETMASTER_API_KEY,
-            size: 50
+            apikey: config.TICKETMASTER_API_KEY,
+            city,
+            size: 60
         };
 
+        // ✅ Use segmentId for filtering only if a category is provided
         if (category && categoryToSegmentId[category]) {
             params.segmentId = categoryToSegmentId[category];
         }
 
-        if (city) {
-            params.city = city;
-        }
-
-        console.log("🔍 Ticketmaster API Request Params:", params);
-
         const response = await axios.get(`${TICKETMASTER_BASE_URL}/events.json`, { params });
-
-        console.log("✅ Ticketmaster API Response:", response.data._embedded?.events?.length || 0, "events found");
 
         return response.data._embedded?.events || [];
     } catch (error) {
-        console.error("❌ ERROR in fetchEvents:", error.response?.status, error.response?.data || error.message);
-        return [];
+        console.error("🚨 ERROR in fetchEvents:", error.response?.data || error.message);
+        throw new Error("Failed to fetch events from Ticketmaster");
     }
 };
 
