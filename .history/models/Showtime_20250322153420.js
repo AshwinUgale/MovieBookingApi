@@ -6,6 +6,7 @@ const ShowtimeSchema = new mongoose.Schema({
     showtime: { type: Date, required: true },
     availableSeats: [{  id: String,
         number: String,
+        type: String,
         booked: Boolean }], 
     version: { type: Number, default: 0 }, 
     createdAt: { type: Date, default: Date.now }

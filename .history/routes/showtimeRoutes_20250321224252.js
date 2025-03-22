@@ -8,7 +8,7 @@ const {
 } = require('../controllers/showtimeController');
 const { auth, adminAuth } = require('../middleware/authMiddleware');
 
-router.get("/fake", getOrCreateFakeShowtimes); 
+router.get("/fake/:movieId", getOrCreateFakeShowtimes); 
 router.get('/', getShowtimes);
 
 router.get("/:showtimeId", getShowtimeById); 

@@ -8,12 +8,11 @@ const {
 } = require('../controllers/showtimeController');
 const { auth, adminAuth } = require('../middleware/authMiddleware');
 
-router.get("/fake", getOrCreateFakeShowtimes); 
-router.get('/', getShowtimes);
 
+router.get('/', getShowtimes); 
 router.get("/:showtimeId", getShowtimeById); 
 router.post('/', adminAuth, createShowtime); 
-
+router.get('/fake', getOrCreateFakeShowtimes);
 
 
 module.exports = router;

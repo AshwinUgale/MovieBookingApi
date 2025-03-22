@@ -51,8 +51,6 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
             seatArray.push({
               id: seatNumber,       // used as unique identifier
               number: seatNumber,   // what’s displayed on frontend
-              type: "Standard",        // 👈 Add a default type
-              price: 1,  
               booked: Math.random() < 0.1, // 10% booked
             });
           }

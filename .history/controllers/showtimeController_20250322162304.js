@@ -40,7 +40,7 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
       ];
   
       // 🔧 Seat generator (6 rows × 8 seats = 48 total)
-      const generateSeats = (rows = 12, seatsPerRow = 16) => {
+      const generateSeats = (rows = 12, seatsPerRow = 12) => {
         const seatArray = [];
         const rowLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   
@@ -51,8 +51,6 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
             seatArray.push({
               id: seatNumber,       // used as unique identifier
               number: seatNumber,   // what’s displayed on frontend
-              type: "Standard",        // 👈 Add a default type
-              price: 1,  
               booked: Math.random() < 0.1, // 10% booked
             });
           }

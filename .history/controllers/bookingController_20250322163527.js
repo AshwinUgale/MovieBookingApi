@@ -214,7 +214,7 @@ exports.createBooking = async (req, res) => {
             user: userId,
             type: "movie",
             showtime: showtimeId,
-            seats, // you can also store full seat objects if needed
+            seats: selectedIds, // you can also store full seat objects if needed
             paymentStatus: "pending"
         });
 

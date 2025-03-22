@@ -21,17 +21,12 @@ exports.getShowtimes = async (req, res) => {
 exports.getOrCreateFakeShowtimes = async (req, res) => {
     try {
       const { movie } = req.query;
-      if (!movie) {
-        return res.status(400).json({ message: "Movie ID is required" });
-      }
+      if (!movie) return res.status(400).json({ message: "Movie ID is required" });
   
-      const mongoose = require('mongoose'); // Make sure this is imported at the top
-      let existing = await Showtime.find({ movie: new mongoose.Types.ObjectId(movie) });
-      
+      let existing = await Showtime.find({ movie });
       if (existing.length > 0) return res.json(existing);
   
-      console.log("🎬 No existing showtimes found. Generating fake ones...");
-  
+      // Create default showtimes with available seats
       const defaultTimes = [
         "2025-03-05T12:00:00",
         "2025-03-05T15:00:00",
@@ -39,33 +34,16 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
         "2025-03-05T21:00:00",
       ];
   
-      // 🔧 Seat generator (6 rows × 8 seats = 48 total)
-      const generateSeats = (rows = 12, seatsPerRow = 16) => {
-        const seatArray = [];
-        const rowLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  
-        for (let row = 0; row < rows; row++) {
-          const rowLetter = rowLetters[row];
-          for (let seat = 1; seat <= seatsPerRow; seat++) {
-            const seatNumber = `${rowLetter}${seat}`;
-            seatArray.push({
-              id: seatNumber,       // used as unique identifier
-              number: seatNumber,   // what’s displayed on frontend
-              type: "Standard",        // 👈 Add a default type
-              price: 1,  
-              booked: Math.random() < 0.1, // 10% booked
-            });
-          }
-        }
-  
-        return seatArray;
-      };
-  
       const fakeShowtimes = defaultTimes.map((time, index) => ({
         movie,
         theater: `Screen ${index + 1}`,
         showtime: new Date(time),
-        availableSeats: generateSeats(),
+        availableSeats: [
+            ...Array.from({ length: 48 }, (_, i) => `VIP-${i + 1}`),
+            ...Array.from({ length: 48 }, (_, i) => `Gold-${i + 1}`),
+            ...Array.from({ length: 48 }, (_, i) => `Silver-${i + 1}`),
+          ]
+          
       }));
   
       const created = await Showtime.insertMany(fakeShowtimes);
@@ -75,8 +53,6 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
       res.status(500).json({ message: "Server error" });
     }
   };
-  
-  
 
 
 
