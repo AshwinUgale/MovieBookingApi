@@ -21,10 +21,14 @@ exports.loadMoviesFromTMDB = async (req, res) => {
  * @desc Fetch genres from TMDB
  */
 exports.getMovieGenres = async (req, res) => {
+    console.log("📌 Received request for /api/movies/genres");
     try {
+        console.log("📌 Received request for /api/movies/genres");
         const genres = await fetchGenres();
+        console.log("✅ Genres fetched successfully:", genres);
         res.status(200).json(genres);
     } catch (error) {
+        console.error("🚨 Error in getMovieGenres:", error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -33,45 +37,33 @@ exports.getMovieGenres = async (req, res) => {
 // ✅ GET /api/movies → Get all movies (with filters & sorting)
 exports.getMovies = async (req, res) => {
     try {
-        let query = {};
-        let sort = { popularity: -1 }; // Default sorting by popularity (highest first)
-
-        // 🎭 Filter by Genre
-        if (req.query.genre) {
-            query.genre = req.query.genre;
-        }
-
-        // 🔍 Filter by Language
-        if (req.query.language) {
-            query.language = req.query.language;
-        }
-
-        // ⭐ Filter by Minimum Rating
-        if (req.query.minRating) {
-            query.voteAverage = { $gte: parseFloat(req.query.minRating) };
-        }
-
-        // 📆 Filter by Release Year
-        if (req.query.year) {
-            query.releaseDate = {
-                $gte: new Date(`${req.query.year}-01-01`),
-                $lt: new Date(`${parseInt(req.query.year) + 1}-01-01`)
-            };
-        }
-
-        // 🔝 Sorting Options
-        if (req.query.sortBy) {
-            if (req.query.sortBy === "rating") sort = { voteAverage: -1 };
-            if (req.query.sortBy === "releaseDate") sort = { releaseDate: -1 };
-        }
-
-        const movies = await Movie.find(query).sort(sort);
-        res.json(movies);
+      const { genre, language, year, minRating, sortBy } = req.query;
+  
+      // Always fetch from TMDB
+      const tmdbMovies = await fetchMoviesFromAPI(); // <- your TMDB fetch service
+  
+      // Optional: filter them locally
+      let filtered = tmdbMovies;
+  
+      if (genre) {
+        filtered = filtered.filter(m => m.genre?.includes(genre));
+      }
+      if (language) {
+        filtered = filtered.filter(m => m.language === language);
+      }
+  
+      // Sort if needed
+      if (sortBy === "rating") {
+        filtered.sort((a, b) => b.voteAverage - a.voteAverage);
+      }
+  
+      res.json(filtered);
     } catch (error) {
-        res.status(500).json({ message: "Server Error" });
+      console.error("❌ Error in getMovies:", error.message);
+      res.status(500).json({ message: "Could not fetch fresh movies" });
     }
-};
-
+  };
+  
 // ✅ GET /api/movies/:id → Get a single movie by MongoDB `_id` or `tmdbId`
 exports.getMovieById = async (req, res) => {
     try {

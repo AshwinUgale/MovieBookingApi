@@ -44,7 +44,12 @@ const fetchGenres = async () => {
  */
 const fetchMoviesFromAPI = async () => {
     try {
-        const genresMap = await fetchGenres();
+        const genreList = await fetchGenres();
+        const genresMap = {};
+        genreList.forEach(({ id, name }) => {
+          genresMap[id] = name;
+        });
+      
         const response = await axios.get(TMDB_MOVIES_URL, {
             headers: {
                 Authorization: `Bearer ${config.TMDB_ACCESS_TOKEN}`,
@@ -53,7 +58,7 @@ const fetchMoviesFromAPI = async () => {
         });
 
         const movies = response.data.results;
-
+        await Movie.deleteMany({});
         for (let movie of movies) {
             // Check if the movie already exists in the database
             const existingMovie = await Movie.findOne({ tmdbId: movie.id });

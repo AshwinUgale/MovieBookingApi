@@ -8,31 +8,48 @@ const TMDB_GENRES_URL = "https://api.themoviedb.org/3/genre/movie/list?language=
 /**
  * Fetch genre names from TMDb
  */
+
+
 const fetchGenres = async () => {
-    try {
-        console.log("📌 Fetching genres from TMDB...");
-        console.log("🔑 Using API Key:", config.TMDB_API_KEY); // ✅ Now using API Key
+  try {
+    console.log("🎬 Fetching genres from TMDB...");
+    
+    const response = await axios.get(TMDB_GENRES_URL, {
+      params: { api_key: config.TMDB_API_KEY }, // ✅ API Key included
+    });
 
-        const response = await axios.get(TMDB_GENRES_URL, {
-            params: { api_key: config.TMDB_API_KEY }, // ✅ Correct API Key usage
-        });
+    console.log("✅ TMDB Response:", response.data);
 
-        console.log("✅ TMDB Response:", response.data);
-        return response.data.genres.reduce((map, genre) => {
-            map[genre.id] = genre.name;
-            return map;
-        }, {});
-    } catch (error) {
-        console.error("🚨 ERROR in fetchGenres:", error.response?.data || error.message);
-        throw new Error("Failed to fetch genres from TMDB");
+    // Ensure response has valid data
+    if (!response.data.genres || response.data.genres.length === 0) {
+      console.warn("⚠️ No genres found in TMDB response.");
+      return [];
     }
+
+    // Convert genres into an array of objects [{ id, name }]
+    const genres = response.data.genres.map((genre) => ({
+      id: genre.id,
+      name: genre.name,
+    }));
+
+    return genres;
+  } catch (error) {
+    console.error("❌ ERROR in fetchGenres:", error.response?.data || error.message);
+    return []; // Return an empty array instead of throwing an error
+  }
 };
+
 /**
  * Fetch movies from TMDb and store them in MongoDB
  */
 const fetchMoviesFromAPI = async () => {
     try {
-        const genresMap = await fetchGenres();
+        const genreList = await fetchGenres();
+        const genresMap = {};
+        genreList.forEach(({ id, name }) => {
+          genresMap[id] = name;
+        });
+      
         const response = await axios.get(TMDB_MOVIES_URL, {
             headers: {
                 Authorization: `Bearer ${config.TMDB_ACCESS_TOKEN}`,
@@ -41,7 +58,7 @@ const fetchMoviesFromAPI = async () => {
         });
 
         const movies = response.data.results;
-
+        await Movie.deleteMany({});
         for (let movie of movies) {
             // Check if the movie already exists in the database
             const existingMovie = await Movie.findOne({ tmdbId: movie.id });
