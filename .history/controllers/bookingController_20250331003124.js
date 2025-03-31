@@ -223,7 +223,32 @@ exports.createBooking = async (req, res) => {
             });
         }
 
-        // Create booking document - the post-save hook will update the seat status
+        // Use atomic operation to update seat status
+        const result = await Showtime.findOneAndUpdate(
+            {
+                _id: showtimeId,
+                'availableSeats': {
+                    $elemMatch: {
+                        'id': { $in: selectedIds },
+                        'booked': false
+                    }
+                }
+            },
+            {
+                $set: { 'availableSeats.$[seat].booked': true },
+                $inc: { version: 1 }
+            },
+            {
+                arrayFilters: [{ 'seat.id': { $in: selectedIds } }],
+                new: true
+            }
+        );
+
+        if (!result) {
+            return res.status(409).json({ message: "Failed to book seats - they may have been booked by someone else. Please try again." });
+        }
+
+        // Create booking document
         console.log("📝 Creating booking document");
         const booking = new Booking({
             user: userId,

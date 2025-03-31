@@ -58,67 +58,55 @@ exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Fetch booking details and populate related data
-        const booking = await Booking.findById(id)
-            .populate({
-                path: "user",
-                select: "email"
-            })
-            .populate({
-                path: "showtime",
-                populate: {
-                    path: "movie",
-                    select: "title"
-                }
-            });
+        // ✅ Fetch booking details and populate 'user' field for email
+        const booking = await Booking.findById(id).populate({
+            path: "user",
+            select: "email"
+        });
 
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        console.log("🟡 DEBUG: Booking Found:", booking._id);
+        console.log("🟡 DEBUG: Booking Found:", booking);
+        console.log("🟡 DEBUG: User in Booking:", booking.user);
 
         if (!booking.user || !booking.user.email) {
             console.error("❌ Error: No recipient email provided.");
             return res.status(400).json({ message: "User email is required." });
         }
 
+        const userEmail = booking.user.email;
+        console.log("📩 Sending cancellation email to:", userEmail);
+
         if (booking.canceled) {
             return res.status(400).json({ message: "Booking already canceled" });
         }
 
-        // Update booking status - this will trigger the post-update hook in the model
+        // ✅ Update booking status
         booking.canceled = true;
         booking.paymentStatus = "refunded"; 
         await booking.save();
 
-        console.log("✅ Booking marked as canceled:", booking._id);
-
-        // Determine email content
+        // ✅ Determine if it's a Movie or an Event
         let subject = "";
         let message = "";
-        const userEmail = booking.user.email;
 
         if (booking.type === "movie") {
-            const movieTitle = booking.showtime?.movie?.title || 'your movie';
             subject = "Movie Ticket Cancellation";
-            message = `Your booking for ${movieTitle} (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
+            message = `Your movie booking (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         } else if (booking.type === "event") {
             subject = "Event Ticket Cancellation";
-            message = `Your event ticket for ${booking.eventDetails.name} at ${booking.eventDetails.venue} has been canceled. Your refund is being processed.`;
+            message = `Your event ticket for **${booking.eventDetails.name}** at **${booking.eventDetails.venue}** has been canceled. Your refund is being processed.`;
         } else {
             subject = "Booking Cancellation";
             message = `Your booking (ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         }
 
-        // Send cancellation email
-        console.log("📩 Sending cancellation email to:", userEmail);
+        // ✅ Send cancellation email
         sendEmail(userEmail, subject, message);
 
-        res.status(200).json({ 
-            message: "Booking canceled and refund initiated", 
-            booking 
-        });
+        res.status(200).json({ message: "Booking canceled and refunded", booking });
 
     } catch (error) {
         console.error("🚨 Error canceling booking:", error);
@@ -135,21 +123,13 @@ exports.getUserBookings = async (req, res) => {
         const bookings = await Booking.find({ user: userId })
             .populate({
                 path: "showtime",
-                select: "movie theater showtime availableSeats version",
                 populate: {
                     path: "movie",
-                    model: "Movie",
-                    select: "title posterUrl overview releaseDate"
+                    select: "title" // Optional: only get the movie title
                 }
             })
             .sort({ createdAt: -1 });
-
-        // Log for debugging
-        console.log("🔍 Fetched Bookings:", JSON.stringify(bookings, null, 2));
-
-        if (!bookings || bookings.length === 0) {
-            return res.status(404).json({ message: "No bookings found" });
-        }
+            console.log(JSON.stringify(bookings[0], null, 2));
 
         res.status(200).json(bookings);
     } catch (error) {
@@ -200,71 +180,71 @@ exports.createBooking = async (req, res) => {
             return res.status(400).json({ message: "No seats selected for booking" });
         }
 
-        // Get showtime with movie data
-        const showtime = await Showtime.findById(showtimeId).populate('movie');
+        const showtime = await Showtime.findById(showtimeId);
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
         }
 
-        console.log("🎬 Found showtime:", { id: showtime._id, movie: showtime.movie?.title || 'Unknown movie' });
-
         const selectedIds = seats.map(seat => seat.id);
 
-        // Check if seats exist and are available
-        const existingSeats = showtime.availableSeats.filter(seat => selectedIds.includes(seat.id));
-        if (existingSeats.length !== selectedIds.length) {
-            return res.status(400).json({ message: "One or more selected seats do not exist" });
-        }
-
-        const bookedSeats = existingSeats.filter(seat => seat.booked);
-        if (bookedSeats.length > 0) {
+        // Check for already booked seats
+        const alreadyBooked = showtime.availableSeats.filter(seat => selectedIds.includes(seat.id) && seat.booked);
+        if (alreadyBooked.length > 0) {
             return res.status(400).json({
-                message: `Seats already booked: ${bookedSeats.map(s => s.number).join(", ")}`
+                message: `Some seats are already booked: ${alreadyBooked.map(s => s.number).join(", ")}`
             });
         }
 
-        // Create booking document - the post-save hook will update the seat status
-        console.log("📝 Creating booking document");
+        // Lock seats in Redis (optional – for concurrency handling)
+        for (const seatId of selectedIds) {
+            const seatKey = `seat:${showtimeId}:${seatId}`;
+            const seatLocked = await redisClient.get(seatKey);
+            if (seatLocked) {
+                return res.status(400).json({ message: `Seat ${seatId} is temporarily locked` });
+            }
+            await redisClient.set(seatKey, userId.toString(), { EX: 300 });
+        }
+        console.log("Selected seat IDs:", selectedIds);
+console.log("Available seats before update:", showtime.availableSeats);
+
+        // Update booked status of selected seats
+       
+
+const updated = [];
+
+showtime.availableSeats = showtime.availableSeats.map(seat => {
+    const seatId = seat.id || seat.number; // ⬅ fallback in case `seat.id` is missing
+    if (selectedIds.includes(seatId)) {
+        updated.push(seatId);
+        return { ...seat, booked: true };
+    }
+    return seat;
+});
+
+        showtime.version += 1;
+        await showtime.save();
+
+        // Create booking document
         const booking = new Booking({
             user: userId,
             type: "movie",
             showtime: showtimeId,
-            seats: seats.map(seat => ({
-                id: seat.id,
-                number: seat.number,
-                price: seat.price || 1
-            })),
+            seats, // you can also store full seat objects if needed
             paymentStatus: "pending"
         });
 
         await booking.save();
-        console.log("✅ Booking saved successfully:", booking._id);
 
         // Send confirmation email
-        if (userEmail) {
-            console.log("📧 Sending confirmation email to:", userEmail);
-            const movieTitle = showtime.movie?.title || 'your movie';
-            sendEmail(userEmail, "Booking Confirmation", 
-                `Your booking is confirmed for ${movieTitle}. Seats: ${seats.map(s => s.number).join(", ")}`
-            );
-        }
-        
-        // Return populated booking data
-        console.log("📤 Fetching populated booking data");
-        const populatedBooking = await Booking.findById(booking._id)
-            .populate({
-                path: "showtime",
-                populate: {
-                    path: "movie",
-                    select: "title posterUrl overview releaseDate"
-                }
-            });
-
-        console.log("✅ Booking process completed successfully");
-        res.status(201).json({ 
-            message: "Booking successful", 
-            booking: populatedBooking
+        sendEmail(userEmail, "Booking Confirmation", `Your booking is confirmed. Seats: ${selectedIds.join(", ")}`);
+        await booking.populate({
+            path: "showtime",
+            populate: {
+                path: "movie",
+                select: "title" // you can add 'genre duration' here too if needed
+            }
         });
+        res.status(201).json({ message: "Booking successful", booking });
 
     } catch (error) {
         console.error("🚨 Booking Error:", error);

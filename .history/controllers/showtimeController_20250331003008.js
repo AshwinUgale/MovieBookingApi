@@ -5,22 +5,55 @@ const Booking = require('../models/Booking');
 exports.getShowtimes = async (req, res) => {
     try {
         const { movie } = req.query;  
+        const Booking = require('../models/Booking');
 
         let query = {};
         if (movie) {
             query.movie = movie;  
         }
     
-        // Get showtimes with populated movie data - don't modify the seats
-        const showtimes = await Showtime.find(query)
-            .populate('movie', 'title posterUrl overview releaseDate'); 
+        // Get showtimes with populated movie data
+        const showtimes = await Showtime.find(query).populate('movie', 'title posterUrl'); 
         
-        if (!showtimes || showtimes.length === 0) {
-            console.log("No showtimes found for query:", query);
-            return res.status(404).json({ message: "No showtimes found" });
+        // For each showtime, sync with booking data
+        for (const showtime of showtimes) {
+            // Get active bookings for this showtime
+            const bookings = await Booking.find({ 
+                showtime: showtime._id, 
+                canceled: { $ne: true } 
+            });
+            
+            // Get all seat IDs that have been booked
+            const bookedSeatIds = new Set();
+            bookings.forEach(booking => {
+                booking.seats.forEach(seat => bookedSeatIds.add(seat.id));
+            });
+            
+            // If there are bookings, ensure seats are marked correctly
+            if (bookedSeatIds.size > 0) {
+                // Update seat data in the showtimes object
+                let hasUpdates = false;
+                showtime.availableSeats = showtime.availableSeats.map(seat => {
+                    if (bookedSeatIds.has(seat.id) && !seat.booked) {
+                        hasUpdates = true;
+                        seat.booked = true;
+                    }
+                    return seat;
+                });
+                
+                // If any seats needed to be updated, save changes to database
+                if (hasUpdates) {
+                    await Showtime.findByIdAndUpdate(
+                        showtime._id, 
+                        { 
+                            $set: { availableSeats: showtime.availableSeats },
+                            $inc: { version: 1 }
+                        }
+                    );
+                }
+            }
         }
         
-        console.log(`Found ${showtimes.length} showtimes`);
         res.json(showtimes);
     } catch (error) {
         console.error("Error fetching showtimes:", error);
@@ -112,18 +145,50 @@ exports.getOrCreateFakeShowtimes = async (req, res) => {
 exports.getShowtimeById = async (req, res) => {
     try {
         const { showtimeId } = req.params;
+        const Booking = require('../models/Booking'); // Make sure Booking is loaded
         
         // Get the showtime and populate movie details
-        const showtime = await Showtime.findById(showtimeId)
-            .populate('movie', 'title posterUrl overview releaseDate');
+        const showtime = await Showtime.findById(showtimeId).populate('movie');
 
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
         }
-
-        // Don't modify the showtime data here - bookings will be reflected
-        // directly in the database through the booking and cancellation flows
         
+        // Sync with active bookings to ensure seat status is accurate
+        const bookings = await Booking.find({ 
+            showtime: showtimeId, 
+            canceled: { $ne: true } 
+        });
+        
+        // Get all seat IDs that have been booked
+        const bookedSeatIds = new Set();
+        bookings.forEach(booking => {
+            booking.seats.forEach(seat => bookedSeatIds.add(seat.id));
+        });
+        
+        // If we have bookings, update the seat status directly in the response
+        // and also persist the changes to the database
+        if (bookedSeatIds.size > 0) {
+            console.log(`📋 Ensuring ${bookedSeatIds.size} booked seats are marked correctly for showtime ${showtime._id}`);
+            
+            // Update the showtime object for the response
+            showtime.availableSeats = showtime.availableSeats.map(seat => {
+                if (bookedSeatIds.has(seat.id)) {
+                    seat.booked = true;
+                }
+                return seat;
+            });
+            
+            // Also update the database to make the change permanent
+            await Showtime.findByIdAndUpdate(
+                showtimeId, 
+                { 
+                    $set: { availableSeats: showtime.availableSeats },
+                    $inc: { version: 1 }
+                }
+            );
+        }
+
         res.status(200).json(showtime);
     } catch (error) {
         console.error("Error fetching showtime:", error);

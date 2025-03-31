@@ -121,7 +121,13 @@ exports.getUserBookings = async (req, res) => {
         const userId = req.user.id;
 
         const bookings = await Booking.find({ user: userId })
-            .populate('showtime')
+            .populate({
+                path: "showtime",
+                populate: {
+                    path: "movie",
+                    select: "title" // Optional: only get the movie title
+                }
+            })
             .sort({ createdAt: -1 });
 
         res.status(200).json(bookings);
@@ -162,96 +168,73 @@ exports.getBookingById = async (req, res) => {
 exports.createBooking = async (req, res) => {
     try {
         const { showtimeId, seats } = req.body;
-        const userId = req.user ? req.user.id : null;
-        const userEmail = req.user ? req.user.email : null;
+        const userId = req.user?.id;
+        const userEmail = req.user?.email;
 
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing" });
         }
 
-        let showtime = await Showtime.findById(showtimeId);
+        if (!Array.isArray(seats) || seats.length === 0) {
+            return res.status(400).json({ message: "No seats selected for booking" });
+        }
+
+        const showtime = await Showtime.findById(showtimeId);
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
         }
 
-        if (!seats || seats.length === 0) {
-            return res.status(400).json({ message: "No seats selected for booking" });
-        }
+        const selectedIds = seats.map(seat => seat.id);
 
-        const invalidSeats = seats.filter(seat => !showtime.availableSeats.includes(seat));
-        if (invalidSeats.length > 0) {
+        // Check for already booked seats
+        const alreadyBooked = showtime.availableSeats.filter(seat => selectedIds.includes(seat.id) && seat.booked);
+        if (alreadyBooked.length > 0) {
             return res.status(400).json({
-                message: `Invalid seat(s): ${invalidSeats.join(", ")}. Available seats: ${showtime.availableSeats.join(", ")}`,
+                message: `Some seats are already booked: ${alreadyBooked.map(s => s.number).join(", ")}`
             });
         }
 
-        if (seats.length > showtime.availableSeats.length) {
-            return res.status(400).json({ message: `Not enough seats available. Only ${showtime.availableSeats.length} left.` });
-        }
-
-        // ✅ Fix: Ensure `seats` exists before using it
-        if (!seats || !Array.isArray(seats)) {
-            return res.status(400).json({ message: "Invalid seats data" });
-        }
-
-        for (const seat of seats) {
-            console.log(`🔍 Checking seat:`, seat);
-            const seatKey = `seat:${showtimeId}:${seat}`;
-
+        // Lock seats in Redis (optional – for concurrency handling)
+        for (const seatId of selectedIds) {
+            const seatKey = `seat:${showtimeId}:${seatId}`;
             const seatLocked = await redisClient.get(seatKey);
             if (seatLocked) {
-                console.log(`🚨 Seat ${seat} is locked in Redis.`);
-                return res.status(400).json({ message: `Seat ${seat} is temporarily locked` });
+                return res.status(400).json({ message: `Seat ${seatId} is temporarily locked` });
             }
-
-            await redisClient.set(seatKey, userId.toString(), { EX: 300 }); 
+            await redisClient.set(seatKey, userId.toString(), { EX: 300 });
         }
 
-        const unavailableSeats = seats.some(seat => !showtime.availableSeats.includes(seat));
-        if (unavailableSeats) {
-            return res.status(400).json({ message: "Some seats are already booked" });
-        }
+        // Update booked status of selected seats
+        showtime.availableSeats = showtime.availableSeats.map(seat => {
+            if (selectedIds.includes(seat.id)) {
+                return { ...seat, booked: true };
+            }
+            return seat;
+        });
 
-        const oldVersion = showtime.version;
-        showtime.availableSeats = showtime.availableSeats.filter(seat => !seats.includes(seat));
         showtime.version += 1;
+        await showtime.save();
 
-        const updatedShowtime = await Showtime.findOneAndUpdate(
-            { _id: showtimeId, version: oldVersion }, 
-            { availableSeats: showtime.availableSeats, version: showtime.version },
-            { new: true }
-        );
-
-        if (!updatedShowtime) {
-            return res.status(409).json({ message: "Booking conflict. Try again." });
-        }
-
-        // ✅ Fix: Ensure `type: "movie"` is included in the booking object
-        const booking = new Booking({ 
-            user: userId, 
-            type: "movie",  // ✅ This ensures the type field is set correctly
-            showtime: showtimeId, 
-            seats, 
-            paymentStatus: "pending" 
+        // Create booking document
+        const booking = new Booking({
+            user: userId,
+            type: "movie",
+            showtime: showtimeId,
+            seats, // you can also store full seat objects if needed
+            paymentStatus: "pending"
         });
 
         await booking.save();
 
-        sendEmail(userEmail, "Booking Confirmation", `Your booking for showtime ${showtime._id} is confirmed. Seats: ${seats.join(", ")}`);
+        // Send confirmation email
+        sendEmail(userEmail, "Booking Confirmation", `Your booking is confirmed. Seats: ${selectedIds.join(", ")}`);
+
         res.status(201).json({ message: "Booking successful", booking });
 
     } catch (error) {
         console.error("🚨 Booking Error:", error);
-
-        // ✅ Fix: Check if `seats` is defined before iterating over it
-        if (Array.isArray(seats)) {
-            for (const seat of seats) {
-                const seatKey = `seat:${showtimeId}:${seat}`;
-                await redisClient.del(seatKey);
-            }
-        }
-
         res.status(500).json({ message: "Server error" });
     }
 };
+
 

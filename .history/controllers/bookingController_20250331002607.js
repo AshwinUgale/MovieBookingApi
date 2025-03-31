@@ -58,67 +58,55 @@ exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Fetch booking details and populate related data
-        const booking = await Booking.findById(id)
-            .populate({
-                path: "user",
-                select: "email"
-            })
-            .populate({
-                path: "showtime",
-                populate: {
-                    path: "movie",
-                    select: "title"
-                }
-            });
+        // ✅ Fetch booking details and populate 'user' field for email
+        const booking = await Booking.findById(id).populate({
+            path: "user",
+            select: "email"
+        });
 
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        console.log("🟡 DEBUG: Booking Found:", booking._id);
+        console.log("🟡 DEBUG: Booking Found:", booking);
+        console.log("🟡 DEBUG: User in Booking:", booking.user);
 
         if (!booking.user || !booking.user.email) {
             console.error("❌ Error: No recipient email provided.");
             return res.status(400).json({ message: "User email is required." });
         }
 
+        const userEmail = booking.user.email;
+        console.log("📩 Sending cancellation email to:", userEmail);
+
         if (booking.canceled) {
             return res.status(400).json({ message: "Booking already canceled" });
         }
 
-        // Update booking status - this will trigger the post-update hook in the model
+        // ✅ Update booking status
         booking.canceled = true;
         booking.paymentStatus = "refunded"; 
         await booking.save();
 
-        console.log("✅ Booking marked as canceled:", booking._id);
-
-        // Determine email content
+        // ✅ Determine if it's a Movie or an Event
         let subject = "";
         let message = "";
-        const userEmail = booking.user.email;
 
         if (booking.type === "movie") {
-            const movieTitle = booking.showtime?.movie?.title || 'your movie';
             subject = "Movie Ticket Cancellation";
-            message = `Your booking for ${movieTitle} (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
+            message = `Your movie booking (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         } else if (booking.type === "event") {
             subject = "Event Ticket Cancellation";
-            message = `Your event ticket for ${booking.eventDetails.name} at ${booking.eventDetails.venue} has been canceled. Your refund is being processed.`;
+            message = `Your event ticket for **${booking.eventDetails.name}** at **${booking.eventDetails.venue}** has been canceled. Your refund is being processed.`;
         } else {
             subject = "Booking Cancellation";
             message = `Your booking (ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         }
 
-        // Send cancellation email
-        console.log("📩 Sending cancellation email to:", userEmail);
+        // ✅ Send cancellation email
         sendEmail(userEmail, subject, message);
 
-        res.status(200).json({ 
-            message: "Booking canceled and refund initiated", 
-            booking 
-        });
+        res.status(200).json({ message: "Booking canceled and refunded", booking });
 
     } catch (error) {
         console.error("🚨 Error canceling booking:", error);
@@ -187,6 +175,7 @@ exports.getBookingById = async (req, res) => {
 
 
 exports.createBooking = async (req, res) => {
+    const lockKeys = [];
     try {
         const { showtimeId, seats } = req.body;
         const userId = req.user?.id;
@@ -200,7 +189,7 @@ exports.createBooking = async (req, res) => {
             return res.status(400).json({ message: "No seats selected for booking" });
         }
 
-        // Get showtime with movie data
+        // Get showtime with fresh data to avoid race conditions
         const showtime = await Showtime.findById(showtimeId).populate('movie');
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
@@ -223,7 +212,71 @@ exports.createBooking = async (req, res) => {
             });
         }
 
-        // Create booking document - the post-save hook will update the seat status
+        // Try to use Redis for locking, but continue even if it fails
+        try {
+            if (redisClient.isConnected !== false) {
+                console.log("🔒 Attempting to acquire Redis locks for seats:", selectedIds);
+                for (const seatId of selectedIds) {
+                    const lockKey = `lock:${showtimeId}:${seatId}`;
+                    const acquired = await redisClient.set(lockKey, userId, {
+                        NX: true,
+                        EX: 30
+                    });
+                    
+                    if (!acquired) {
+                        throw new Error(`Seat ${seatId} is being booked by another user`);
+                    }
+                    lockKeys.push(lockKey);
+                }
+                console.log("✅ Successfully acquired all Redis locks");
+            } else {
+                console.log("⚠️ Redis not connected, skipping lock acquisition");
+            }
+        } catch (error) {
+            console.warn("⚠️ Redis locking failed:", error.message);
+            // Release any acquired locks
+            for (const key of lockKeys) {
+                await redisClient.del(key).catch(() => {});
+            }
+            lockKeys.length = 0;
+            // Continue without Redis locks - we'll rely on MongoDB's atomic updates
+        }
+
+        // Use MongoDB's atomic findOneAndUpdate to prevent race conditions
+        console.log("💾 Updating seats in database using atomic operation");
+        
+        // Use MongoDB version for optimistic locking
+        const result = await Showtime.findOneAndUpdate(
+            {
+                _id: showtimeId,
+                version: showtime.version, // Verify we're updating the version we read
+                availableSeats: {
+                    $elemMatch: {
+                        id: { $in: selectedIds },
+                        booked: false
+                    }
+                }
+            },
+            {
+                $set: { 'availableSeats.$[seat].booked': true },
+                $inc: { version: 1 } // Increment version
+            },
+            {
+                arrayFilters: [{ 'seat.id': { $in: selectedIds } }],
+                new: true
+            }
+        );
+
+        if (!result) {
+            console.log("❌ Failed to update seats in database - concurrent modification detected");
+            // Release Redis locks if any
+            for (const key of lockKeys) {
+                await redisClient.del(key).catch(() => {});
+            }
+            return res.status(409).json({ message: "Failed to book seats - they may have been booked by someone else. Please try again." });
+        }
+
+        // Create booking document
         console.log("📝 Creating booking document");
         const booking = new Booking({
             user: userId,
@@ -240,16 +293,23 @@ exports.createBooking = async (req, res) => {
         await booking.save();
         console.log("✅ Booking saved successfully:", booking._id);
 
+        // Release Redis locks if any
+        if (lockKeys.length > 0) {
+            console.log("🔓 Releasing Redis locks");
+            for (const key of lockKeys) {
+                await redisClient.del(key).catch(() => {});
+            }
+        }
+
         // Send confirmation email
         if (userEmail) {
             console.log("📧 Sending confirmation email to:", userEmail);
-            const movieTitle = showtime.movie?.title || 'your movie';
             sendEmail(userEmail, "Booking Confirmation", 
-                `Your booking is confirmed for ${movieTitle}. Seats: ${seats.map(s => s.number).join(", ")}`
+                `Your booking is confirmed for ${showtime.movie?.title || 'your movie'}. Seats: ${seats.map(s => s.number).join(", ")}`
             );
         }
         
-        // Return populated booking data
+        // Return populated booking data with a separate query to ensure fresh data
         console.log("📤 Fetching populated booking data");
         const populatedBooking = await Booking.findById(booking._id)
             .populate({
@@ -268,6 +328,13 @@ exports.createBooking = async (req, res) => {
 
     } catch (error) {
         console.error("🚨 Booking Error:", error);
+        // Release any locks in case of error
+        if (lockKeys.length > 0) {
+            console.log("🔓 Releasing locks due to error");
+            for (const key of lockKeys) {
+                await redisClient.del(key).catch(() => {});
+            }
+        }
         res.status(500).json({ message: "Server error" });
     }
 };

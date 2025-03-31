@@ -44,7 +44,12 @@ const fetchGenres = async () => {
  */
 const fetchMoviesFromAPI = async () => {
     try {
-        const genresMap = await fetchGenres();
+        const genreList = await fetchGenres();
+        const genresMap = {};
+        genreList.forEach(({ id, name }) => {
+          genresMap[id] = name;
+        });
+      
         const response = await axios.get(TMDB_MOVIES_URL, {
             headers: {
                 Authorization: `Bearer ${config.TMDB_ACCESS_TOKEN}`,
@@ -53,12 +58,34 @@ const fetchMoviesFromAPI = async () => {
         });
 
         const movies = response.data.results;
-
+        // Don't delete existing movies, update them or add new ones
+        let updatedCount = 0;
+        let createdCount = 0;
+        
         for (let movie of movies) {
             // Check if the movie already exists in the database
             const existingMovie = await Movie.findOne({ tmdbId: movie.id });
 
-            if (!existingMovie) {
+            if (existingMovie) {
+                // Update the existing movie
+                await Movie.findByIdAndUpdate(existingMovie._id, {
+                    title: movie.title,
+                    originalTitle: movie.original_title,
+                    overview: movie.overview,
+                    posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}`,
+                    backdropUrl: `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}`,
+                    mediaType: movie.media_type || "movie",
+                    genre: movie.genre_ids.map(id => genresMap[id] || "Unknown"),
+                    popularity: movie.popularity || 0,
+                    releaseDate: movie.release_date,
+                    video: movie.video || false,
+                    voteAverage: movie.vote_average || 0,
+                    voteCount: movie.vote_count || 0,
+                    language: movie.original_language || "English",
+                });
+                updatedCount++;
+            } else {
+                // Create a new movie if it doesn't exist
                 await Movie.create({
                     tmdbId: movie.id,
                     title: movie.title,
@@ -75,9 +102,11 @@ const fetchMoviesFromAPI = async () => {
                     voteCount: movie.vote_count || 0,
                     language: movie.original_language || "English",
                 });
+                createdCount++;
             }
         }
 
+        console.log(`✅ Movies updated from TMDB: ${updatedCount} updated, ${createdCount} created`);
         return { message: "Movies loaded successfully from TMDb" };
     } catch (error) {
         console.error("🚨 Error fetching movies:", error.message);

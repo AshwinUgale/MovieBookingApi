@@ -54,23 +54,22 @@ exports.createEventBooking = async (req, res) => {
 
 
 
-
 exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // ✅ Populate 'user' field to get the email
+        // ✅ Fetch booking details and populate 'user' field for email
         const booking = await Booking.findById(id).populate({
-            path: 'user',
-            select: 'email' // Fetch only the email field
+            path: "user",
+            select: "email"
         });
 
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        console.log("🟡 DEBUG: Booking Found:", booking); // Debugging
-        console.log("🟡 DEBUG: User in Booking:", booking.user); // Check if user is populated
+        console.log("🟡 DEBUG: Booking Found:", booking);
+        console.log("🟡 DEBUG: User in Booking:", booking.user);
 
         if (!booking.user || !booking.user.email) {
             console.error("❌ Error: No recipient email provided.");
@@ -78,17 +77,34 @@ exports.cancelBooking = async (req, res) => {
         }
 
         const userEmail = booking.user.email;
-        console.log("📩 Sending cancellation email to:", userEmail); // Debug log
+        console.log("📩 Sending cancellation email to:", userEmail);
 
         if (booking.canceled) {
             return res.status(400).json({ message: "Booking already canceled" });
         }
 
+        // ✅ Update booking status
         booking.canceled = true;
         booking.paymentStatus = "refunded"; 
         await booking.save();
 
-        sendEmail(userEmail, "Booking Cancellation", `Your booking ${booking._id} has been canceled. Refund will be processed shortly.`);
+        // ✅ Determine if it's a Movie or an Event
+        let subject = "";
+        let message = "";
+
+        if (booking.type === "movie") {
+            subject = "Movie Ticket Cancellation";
+            message = `Your movie booking (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
+        } else if (booking.type === "event") {
+            subject = "Event Ticket Cancellation";
+            message = `Your event ticket for **${booking.eventDetails.name}** at **${booking.eventDetails.venue}** has been canceled. Your refund is being processed.`;
+        } else {
+            subject = "Booking Cancellation";
+            message = `Your booking (ID: ${booking._id}) has been canceled. Your refund is being processed.`;
+        }
+
+        // ✅ Send cancellation email
+        sendEmail(userEmail, subject, message);
 
         res.status(200).json({ message: "Booking canceled and refunded", booking });
 
@@ -99,12 +115,19 @@ exports.cancelBooking = async (req, res) => {
 };
 
 
+
 exports.getUserBookings = async (req, res) => {
     try {
         const userId = req.user.id;
 
         const bookings = await Booking.find({ user: userId })
-            .populate('showtime')
+            .populate({
+                path: "showtime",
+                populate: {
+                    path: "movie",
+                    select: "title" // Optional: only get the movie title
+                }
+            })
             .sort({ createdAt: -1 });
 
         res.status(200).json(bookings);
@@ -142,89 +165,76 @@ exports.getBookingById = async (req, res) => {
 
 
 
-
 exports.createBooking = async (req, res) => {
     try {
         const { showtimeId, seats } = req.body;
-        const userId = req.user ? req.user.id : null;
-        const userEmail = req.user.email;
+        const userId = req.user?.id;
+        const userEmail = req.user?.email;
 
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing" });
         }
 
-        let showtime = await Showtime.findById(showtimeId);
+        if (!Array.isArray(seats) || seats.length === 0) {
+            return res.status(400).json({ message: "No seats selected for booking" });
+        }
+
+        const showtime = await Showtime.findById(showtimeId);
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
         }
 
-       
-        const invalidSeats = seats.filter(seat => !showtime.availableSeats.includes(seat));
-        if (invalidSeats.length > 0) {
+        const selectedIds = seats.map(seat => seat.id);
+
+        // Check for already booked seats
+        const alreadyBooked = showtime.availableSeats.filter(seat => selectedIds.includes(seat.id) && seat.booked);
+        if (alreadyBooked.length > 0) {
             return res.status(400).json({
-                message: `Invalid seat(s): ${invalidSeats.join(", ")}. Please select from available seats: ${showtime.availableSeats.join(", ")}`,
+                message: `Some seats are already booked: ${alreadyBooked.map(s => s.number).join(", ")}`
             });
         }
 
-  
-        if (seats.length > showtime.availableSeats.length) {
-            return res.status(400).json({
-                message: `Not enough seats available. Only ${showtime.availableSeats.length} left.`,
-            });
-        }
-
-        
-        for (const seat of seats) {
-            console.log(`🔍 Checking seat:`, seat);
-            const seatKey = `seat:${showtimeId}:${seat}`;
-
+        // Lock seats in Redis (optional – for concurrency handling)
+        for (const seatId of selectedIds) {
+            const seatKey = `seat:${showtimeId}:${seatId}`;
             const seatLocked = await redisClient.get(seatKey);
             if (seatLocked) {
-                console.log(`🚨 Seat ${seat} is locked in Redis.`);
-                return res.status(400).json({ message: `Seat ${seat} is temporarily locked` });
+                return res.status(400).json({ message: `Seat ${seatId} is temporarily locked` });
             }
-
-            await redisClient.set(seatKey, userId.toString(), { EX: 300 }); 
+            await redisClient.set(seatKey, userId.toString(), { EX: 300 });
         }
 
-       
+        // Update booked status of selected seats
+        showtime.availableSeats = showtime.availableSeats.map(seat => {
+            if (selectedIds.includes(seat.id)) {
+                return { ...seat, booked: true };
+            }
+            return seat;
+        });
 
-      
-        const unavailableSeats = seats.some(seat => !showtime.availableSeats.includes(seat));
-        if (unavailableSeats) {
-            return res.status(400).json({ message: "Some seats are already booked" });
-        }
-
-    
-        const oldVersion = showtime.version;
-        showtime.availableSeats = showtime.availableSeats.filter(seat => !seats.includes(seat));
         showtime.version += 1;
+        await showtime.save();
 
-        const updatedShowtime = await Showtime.findOneAndUpdate(
-            { _id: showtimeId, version: oldVersion }, 
-            { availableSeats: showtime.availableSeats, version: showtime.version },
-            { new: true }
-        );
+        // Create booking document
+        const booking = new Booking({
+            user: userId,
+            type: "movie",
+            showtime: showtimeId,
+            seats, // you can also store full seat objects if needed
+            paymentStatus: "pending"
+        });
 
-        if (!updatedShowtime) {
-            return res.status(409).json({ message: "Booking conflict. Try again." });
-        }
-
-        const booking = new Booking({ user: userId, showtime: showtimeId, seats, paymentStatus: "pending" });
         await booking.save();
 
-        sendEmail(userEmail, "Booking Confirmation", `Your booking for showtime ${showtime._id} is confirmed. Seats: ${seats.join(", ")}`);
+        // Send confirmation email
+        sendEmail(userEmail, "Booking Confirmation", `Your booking is confirmed. Seats: ${selectedIds.join(", ")}`);
+        
         res.status(201).json({ message: "Booking successful", booking });
 
     } catch (error) {
         console.error("🚨 Booking Error:", error);
-
-       
-        for (const seat of seats) {
-            const seatKey = `seat:${showtimeId}:${seat}`;
-            await redisClient.del(seatKey);
-        }
-
         res.status(500).json({ message: "Server error" });
     }
 };
+
+

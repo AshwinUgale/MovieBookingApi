@@ -58,19 +58,13 @@ exports.cancelBooking = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Fetch booking details and populate related data
+        // ✅ Fetch booking details and populate related data
         const booking = await Booking.findById(id)
             .populate({
                 path: "user",
                 select: "email"
             })
-            .populate({
-                path: "showtime",
-                populate: {
-                    path: "movie",
-                    select: "title"
-                }
-            });
+            .populate("showtime");
 
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
@@ -83,42 +77,62 @@ exports.cancelBooking = async (req, res) => {
             return res.status(400).json({ message: "User email is required." });
         }
 
+        const userEmail = booking.user.email;
+        console.log("📩 Sending cancellation email to:", userEmail);
+
         if (booking.canceled) {
             return res.status(400).json({ message: "Booking already canceled" });
         }
 
-        // Update booking status - this will trigger the post-update hook in the model
+        // ✅ Update booking status
         booking.canceled = true;
         booking.paymentStatus = "refunded"; 
         await booking.save();
 
-        console.log("✅ Booking marked as canceled:", booking._id);
+        // ✅ If it's a movie booking, release the seats
+        if (booking.type === "movie" && booking.showtime && booking.seats && booking.seats.length > 0) {
+            const seatIds = booking.seats.map(seat => seat.id);
+            console.log("🪑 Releasing seats:", seatIds);
+            
+            // Update the showtime to mark seats as available
+            const result = await Showtime.findOneAndUpdate(
+                { _id: booking.showtime._id },
+                { 
+                    $set: { 'availableSeats.$[seat].booked': false },
+                    $inc: { version: 1 }
+                },
+                {
+                    arrayFilters: [{ 'seat.id': { $in: seatIds } }],
+                    new: true
+                }
+            );
+            
+            if (!result) {
+                console.warn("⚠️ Failed to release seats, showtime may no longer exist");
+            } else {
+                console.log("✅ Successfully released seats");
+            }
+        }
 
-        // Determine email content
+        // ✅ Determine if it's a Movie or an Event
         let subject = "";
         let message = "";
-        const userEmail = booking.user.email;
 
         if (booking.type === "movie") {
-            const movieTitle = booking.showtime?.movie?.title || 'your movie';
             subject = "Movie Ticket Cancellation";
-            message = `Your booking for ${movieTitle} (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
+            message = `Your movie booking (Booking ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         } else if (booking.type === "event") {
             subject = "Event Ticket Cancellation";
-            message = `Your event ticket for ${booking.eventDetails.name} at ${booking.eventDetails.venue} has been canceled. Your refund is being processed.`;
+            message = `Your event ticket for **${booking.eventDetails.name}** at **${booking.eventDetails.venue}** has been canceled. Your refund is being processed.`;
         } else {
             subject = "Booking Cancellation";
             message = `Your booking (ID: ${booking._id}) has been canceled. Your refund is being processed.`;
         }
 
-        // Send cancellation email
-        console.log("📩 Sending cancellation email to:", userEmail);
+        // ✅ Send cancellation email
         sendEmail(userEmail, subject, message);
 
-        res.status(200).json({ 
-            message: "Booking canceled and refund initiated", 
-            booking 
-        });
+        res.status(200).json({ message: "Booking canceled and refunded", booking });
 
     } catch (error) {
         console.error("🚨 Error canceling booking:", error);
@@ -223,7 +237,32 @@ exports.createBooking = async (req, res) => {
             });
         }
 
-        // Create booking document - the post-save hook will update the seat status
+        // Use atomic operation to update seat status
+        const result = await Showtime.findOneAndUpdate(
+            {
+                _id: showtimeId,
+                'availableSeats': {
+                    $elemMatch: {
+                        'id': { $in: selectedIds },
+                        'booked': false
+                    }
+                }
+            },
+            {
+                $set: { 'availableSeats.$[seat].booked': true },
+                $inc: { version: 1 }
+            },
+            {
+                arrayFilters: [{ 'seat.id': { $in: selectedIds } }],
+                new: true
+            }
+        );
+
+        if (!result) {
+            return res.status(409).json({ message: "Failed to book seats - they may have been booked by someone else. Please try again." });
+        }
+
+        // Create booking document
         console.log("📝 Creating booking document");
         const booking = new Booking({
             user: userId,

@@ -121,8 +121,18 @@ exports.getUserBookings = async (req, res) => {
         const userId = req.user.id;
 
         const bookings = await Booking.find({ user: userId })
-            .populate('showtime')
+            .populate({
+                path: "showtime",
+                populate: {
+                    path: "movie",
+                    select: "title posterUrl overview releaseDate"
+                }
+            })
             .sort({ createdAt: -1 });
+
+        if (!bookings) {
+            return res.status(404).json({ message: "No bookings found" });
+        }
 
         res.status(200).json(bookings);
     } catch (error) {
@@ -159,89 +169,117 @@ exports.getBookingById = async (req, res) => {
 
 
 
-
 exports.createBooking = async (req, res) => {
     try {
         const { showtimeId, seats } = req.body;
-        const userId = req.user ? req.user.id : null;
-        const userEmail = req.user.email;
+        const userId = req.user?.id;
+        const userEmail = req.user?.email;
 
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing" });
         }
 
-        let showtime = await Showtime.findById(showtimeId);
+        if (!Array.isArray(seats) || seats.length === 0) {
+            return res.status(400).json({ message: "No seats selected for booking" });
+        }
+
+        const showtime = await Showtime.findById(showtimeId);
         if (!showtime) {
             return res.status(404).json({ message: "Showtime not found" });
         }
 
-       
-        const invalidSeats = seats.filter(seat => !showtime.availableSeats.includes(seat));
-        if (invalidSeats.length > 0) {
+        const selectedIds = seats.map(seat => seat.id);
+
+        // Check for already booked seats with fresh data
+        const freshShowtime = await Showtime.findById(showtimeId);
+        const alreadyBooked = freshShowtime.availableSeats.filter(seat => selectedIds.includes(seat.id) && seat.booked);
+        if (alreadyBooked.length > 0) {
             return res.status(400).json({
-                message: `Invalid seat(s): ${invalidSeats.join(", ")}. Please select from available seats: ${showtime.availableSeats.join(", ")}`,
+                message: `Some seats are already booked: ${alreadyBooked.map(s => s.number).join(", ")}`
             });
         }
 
-  
-        if (seats.length > showtime.availableSeats.length) {
-            return res.status(400).json({
-                message: `Not enough seats available. Only ${showtime.availableSeats.length} left.`,
-            });
-        }
-
-        
-        for (const seat of seats) {
-            console.log(`🔍 Checking seat:`, seat);
-            const seatKey = `seat:${showtimeId}:${seat}`;
-
+        // Lock seats in Redis for concurrency control
+        const lockPromises = selectedIds.map(async seatId => {
+            const seatKey = `seat:${showtimeId}:${seatId}`;
             const seatLocked = await redisClient.get(seatKey);
             if (seatLocked) {
-                console.log(`🚨 Seat ${seat} is locked in Redis.`);
-                return res.status(400).json({ message: `Seat ${seat} is temporarily locked` });
+                throw new Error(`Seat ${seatId} is temporarily locked`);
             }
+            return redisClient.set(seatKey, userId.toString(), { EX: 300 }); // 5 minutes lock
+        });
 
-            await redisClient.set(seatKey, userId.toString(), { EX: 300 }); 
+        try {
+            await Promise.all(lockPromises);
+        } catch (error) {
+            return res.status(400).json({ message: error.message });
         }
 
-       
-
-      
-        const unavailableSeats = seats.some(seat => !showtime.availableSeats.includes(seat));
-        if (unavailableSeats) {
-            return res.status(400).json({ message: "Some seats are already booked" });
-        }
-
-    
-        const oldVersion = showtime.version;
-        showtime.availableSeats = showtime.availableSeats.filter(seat => !seats.includes(seat));
-        showtime.version += 1;
-
+        // Use optimistic locking with version field
         const updatedShowtime = await Showtime.findOneAndUpdate(
-            { _id: showtimeId, version: oldVersion }, 
-            { availableSeats: showtime.availableSeats, version: showtime.version },
-            { new: true }
+            {
+                _id: showtimeId,
+                version: freshShowtime.version,
+                'availableSeats': {
+                    $elemMatch: {
+                        'id': { $in: selectedIds },
+                        'booked': false
+                    }
+                }
+            },
+            {
+                $set: {
+                    'availableSeats.$[seat].booked': true
+                },
+                $inc: { version: 1 }
+            },
+            {
+                arrayFilters: [{ 'seat.id': { $in: selectedIds } }],
+                new: true
+            }
         );
 
         if (!updatedShowtime) {
-            return res.status(409).json({ message: "Booking conflict. Try again." });
+            // Release Redis locks
+            await Promise.all(selectedIds.map(seatId => 
+                redisClient.del(`seat:${showtimeId}:${seatId}`)
+            ));
+            return res.status(409).json({ message: "Seats no longer available. Please try again." });
         }
 
-        const booking = new Booking({ user: userId, showtime: showtimeId, seats, paymentStatus: "pending" });
+        // Create booking document
+        const booking = new Booking({
+            user: userId,
+            type: "movie",
+            showtime: showtimeId,
+            seats,
+            paymentStatus: "pending"
+        });
+
         await booking.save();
 
-        sendEmail(userEmail, "Booking Confirmation", `Your booking for showtime ${showtime._id} is confirmed. Seats: ${seats.join(", ")}`);
+        // Release Redis locks after successful booking
+        await Promise.all(selectedIds.map(seatId => 
+            redisClient.del(`seat:${showtimeId}:${seatId}`)
+        ));
+
+        // Send confirmation email
+        if (userEmail) {
+            sendEmail(userEmail, "Booking Confirmation", `Your booking is confirmed. Seats: ${selectedIds.join(", ")}`);
+        }
+        
         res.status(201).json({ message: "Booking successful", booking });
 
     } catch (error) {
         console.error("🚨 Booking Error:", error);
-
-       
-        for (const seat of seats) {
-            const seatKey = `seat:${showtimeId}:${seat}`;
-            await redisClient.del(seatKey);
+        // Release any Redis locks in case of error
+        if (selectedIds) {
+            await Promise.all(selectedIds.map(seatId => 
+                redisClient.del(`seat:${showtimeId}:${seatId}`)
+            ));
         }
-
         res.status(500).json({ message: "Server error" });
     }
 };
+
+
