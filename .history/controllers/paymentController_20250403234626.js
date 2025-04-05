@@ -4,26 +4,6 @@ const User = require("../models/User");
 const paypalService = require("../services/paypalservice");  // correct
 
 
-exports.updateBookingStatus = async (req, res) => {
-    try {
-      const { bookingId } = req.params;
-      const booking = await Booking.findById(bookingId);
-  
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-  
-      booking.paymentStatus = "paid";
-      await booking.save();
-  
-      res.status(200).json({ success: true, message: "Booking marked as paid" });
-    } catch (error) {
-      console.error("❌ Error updating booking status:", error);
-      res.status(500).json({ success: false, message: "Failed to update booking status" });
-    }
-  };
-  
-
 exports.initiatePayment = async (req, res) => {
     try {
         const { bookingId } = req.body;
@@ -64,50 +44,29 @@ exports.initiatePayment = async (req, res) => {
 
 exports.verifyPayment = async (req, res) => {
     try {
-        const { paymentId, PayerID } = req.body;  // Get both from request body
+        const { paymentId, PayerID } = req.body;
         
         if (!paymentId || !PayerID) {
-            return res.status(400).json({ 
-                status: 'error',
-                message: 'Missing payment information' 
-            });
+            return res.status(400).json({ message: "Missing payment information" });
         }
 
-        // First verify the payment with PayPal
-        const verificationResult = await paypalService.executePayment(paymentId, PayerID);
+        // Execute the payment with PayPal
+        const executionResult = await paypalService.executePayment(paymentId, PayerID);
         
-        if (verificationResult.state === "approved") {
-            // Find the booking associated with this payment
-            const booking = await Booking.findOne({ paypalPaymentId: paymentId });
-            
-            if (booking) {
-                booking.paymentStatus = 'paid';
-                await booking.save();
-            }
-
-            res.status(200).json({
-                status: 'success',
-                message: 'Payment verified successfully'
+        if (executionResult.state === "approved") {
+            res.status(200).json({ 
+                status: "success",
+                message: "Payment verified successfully" 
             });
         } else {
-            res.status(400).json({
-                status: 'failed',
-                message: 'Payment verification failed'
+            res.status(400).json({ 
+                status: "failed",
+                message: "Payment verification failed" 
             });
         }
     } catch (error) {
-        console.error('🚨 Payment Verification Error:', error);
-        // Check if it's a PayPal API error
-        if (error.response?.data?.message) {
-            return res.status(400).json({
-                status: 'error',
-                message: error.response.data.message
-            });
-        }
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to verify payment'
-        });
+        console.error("🚨 Payment Verification Error:", error);
+        res.status(500).json({ message: "Failed to verify payment" });
     }
 };
 

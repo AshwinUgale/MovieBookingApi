@@ -5,7 +5,6 @@ const redisClient = require('../config/redis');
 const sendEmail = require('../utils/emailService');
 const User = require('../models/User');
 const { fetchEvents } = require('../services/ticketmasterService');
-const paypalService = require('../services/paypalservice');
 
 
 // ... existing code ...

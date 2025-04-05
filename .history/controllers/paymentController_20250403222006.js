@@ -1,28 +1,8 @@
 const Booking = require("../models/Booking");
 const sendEmail = require("../utils/emailService");
 const User = require("../models/User");
-const paypalService = require("../services/paypalservice");  // correct
+const paypalService = require("../services/paypalservice");
 
-
-exports.updateBookingStatus = async (req, res) => {
-    try {
-      const { bookingId } = req.params;
-      const booking = await Booking.findById(bookingId);
-  
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-  
-      booking.paymentStatus = "paid";
-      await booking.save();
-  
-      res.status(200).json({ success: true, message: "Booking marked as paid" });
-    } catch (error) {
-      console.error("❌ Error updating booking status:", error);
-      res.status(500).json({ success: false, message: "Failed to update booking status" });
-    }
-  };
-  
 
 exports.initiatePayment = async (req, res) => {
     try {
@@ -64,50 +44,25 @@ exports.initiatePayment = async (req, res) => {
 
 exports.verifyPayment = async (req, res) => {
     try {
-        const { paymentId, PayerID } = req.body;  // Get both from request body
-        
-        if (!paymentId || !PayerID) {
-            return res.status(400).json({ 
-                status: 'error',
-                message: 'Missing payment information' 
-            });
+        const { bookingId, paymentId } = req.body;
+        const booking = await Booking.findById(bookingId);
+
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
         }
 
-        // First verify the payment with PayPal
-        const verificationResult = await paypalService.executePayment(paymentId, PayerID);
+        const paymentDetails = await paypalService.getPaymentDetails(paymentId);
         
-        if (verificationResult.state === "approved") {
-            // Find the booking associated with this payment
-            const booking = await Booking.findOne({ paypalPaymentId: paymentId });
-            
-            if (booking) {
-                booking.paymentStatus = 'paid';
-                await booking.save();
-            }
-
-            res.status(200).json({
-                status: 'success',
-                message: 'Payment verified successfully'
-            });
+        if (paymentDetails.status === "COMPLETED") {
+            booking.paymentStatus = "paid";
+            await booking.save();
+            res.status(200).json({ message: "Payment verified successfully" });
         } else {
-            res.status(400).json({
-                status: 'failed',
-                message: 'Payment verification failed'
-            });
+            res.status(400).json({ message: "Payment verification failed" });
         }
     } catch (error) {
-        console.error('🚨 Payment Verification Error:', error);
-        // Check if it's a PayPal API error
-        if (error.response?.data?.message) {
-            return res.status(400).json({
-                status: 'error',
-                message: error.response.data.message
-            });
-        }
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to verify payment'
-        });
+        console.error("🚨 Payment Verification Error:", error);
+        res.status(500).json({ message: "Failed to verify payment" });
     }
 };
 
@@ -156,35 +111,22 @@ exports.cancelPayment = async (req, res) => {
 
 
 
-
-
-
 exports.handlePaymentSuccess = async (req, res) => {
     try {
         const { bookingId } = req.query;
-        const paymentId = req.query.paymentId;
-        const payerId = req.query.PayerID;
-
-        if (!bookingId || !paymentId || !payerId) {
-            console.error("Missing required parameters:", { bookingId, paymentId, payerId });
-            return res.redirect(`${process.env.CLIENT_URL}/payment/error?message=missing-parameters`);
-        }
-
         const booking = await Booking.findById(bookingId).populate({
             path: "user",
             select: "email"
         });
 
         if (!booking) {
-            console.error("Booking not found:", bookingId);
-            return res.redirect(`${process.env.CLIENT_URL}/payment/error?message=booking-not-found`);
+            return res.status(404).json({ message: "Booking not found" });
         }
 
-        // Execute the payment with PayPal
-        console.log("Executing PayPal payment...");
-        const executionResult = await paypalService.executePayment(paymentId, payerId);
+        // Get payment details from PayPal service
+        const paymentDetails = await paypalService.getPaymentDetails(booking.paypalPaymentId);
 
-        if (executionResult.state === "approved") {
+        if (paymentDetails.status === "APPROVED") {
             // Update booking status
             booking.paymentStatus = "paid";
             await booking.save();
@@ -202,26 +144,24 @@ exports.handlePaymentSuccess = async (req, res) => {
                     message = `Your payment for the event ${booking.eventDetails.name} at ${booking.eventDetails.venue} has been received.`;
                 }
 
-                await sendEmail(booking.user.email, subject, message);
+                sendEmail(booking.user.email, subject, message);
             }
 
-            console.log("Payment successful, redirecting to success page...");
-            return res.redirect(`${process.env.CLIENT_URL}/payment/success?bookingId=${bookingId}&paymentId=${paymentId}`);
+            res.redirect(`${process.env.CLIENT_URL}/bookings/${bookingId}?status=success`);
         } else {
-            console.error("Payment execution failed:", executionResult);
-            return res.redirect(`${process.env.CLIENT_URL}/payment/error?message=execution-failed`);
+            res.redirect(`${process.env.CLIENT_URL}/bookings/${bookingId}?status=error`);
         }
 
     } catch (error) {
         console.error("🚨 Payment Success Handler Error:", error);
-        res.redirect(`${process.env.CLIENT_URL}/payment/error?message=payment-processing-failed`);
+        res.redirect(`${process.env.CLIENT_URL}/error?message=payment-processing-failed`);
     }
 };
 
 exports.handlePaymentCancel = async (req, res) => {
     try {
         const { bookingId } = req.query;
-        res.redirect(`${process.env.CLIENT_URL}/payment/cancel?bookingId=${bookingId}`);
+        res.redirect(`${process.env.CLIENT_URL}/bookings/${bookingId}?status=cancelled`);
     } catch (error) {
         console.error("🚨 Payment Cancel Handler Error:", error);
         res.redirect(`${process.env.CLIENT_URL}/error?message=payment-cancellation-failed`);

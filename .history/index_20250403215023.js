@@ -33,7 +33,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/movies', movieRoutes);
 app.use('/api/showtimes',showtimeRoutes);
 app.use('/api/bookings', bookingRoutes); 
-app.use('/api/payments', paymentRoutes);
+app.use('/payment', paymentRoutes);
 app.use("/api/ticketmaster", ticketmasterRoutes);
 
 app.use((req, res, next) => {

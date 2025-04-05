@@ -4,26 +4,6 @@ const User = require("../models/User");
 const paypalService = require("../services/paypalservice");  // correct
 
 
-exports.updateBookingStatus = async (req, res) => {
-    try {
-      const { bookingId } = req.params;
-      const booking = await Booking.findById(bookingId);
-  
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-  
-      booking.paymentStatus = "paid";
-      await booking.save();
-  
-      res.status(200).json({ success: true, message: "Booking marked as paid" });
-    } catch (error) {
-      console.error("❌ Error updating booking status:", error);
-      res.status(500).json({ success: false, message: "Failed to update booking status" });
-    }
-  };
-  
-
 exports.initiatePayment = async (req, res) => {
     try {
         const { bookingId } = req.body;

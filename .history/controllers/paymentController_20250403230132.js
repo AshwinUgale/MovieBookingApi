@@ -4,26 +4,6 @@ const User = require("../models/User");
 const paypalService = require("../services/paypalservice");  // correct
 
 
-exports.updateBookingStatus = async (req, res) => {
-    try {
-      const { bookingId } = req.params;
-      const booking = await Booking.findById(bookingId);
-  
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-  
-      booking.paymentStatus = "paid";
-      await booking.save();
-  
-      res.status(200).json({ success: true, message: "Booking marked as paid" });
-    } catch (error) {
-      console.error("❌ Error updating booking status:", error);
-      res.status(500).json({ success: false, message: "Failed to update booking status" });
-    }
-  };
-  
-
 exports.initiatePayment = async (req, res) => {
     try {
         const { bookingId } = req.body;
@@ -64,50 +44,25 @@ exports.initiatePayment = async (req, res) => {
 
 exports.verifyPayment = async (req, res) => {
     try {
-        const { paymentId, PayerID } = req.body;  // Get both from request body
-        
-        if (!paymentId || !PayerID) {
-            return res.status(400).json({ 
-                status: 'error',
-                message: 'Missing payment information' 
-            });
+        const { bookingId, paymentId } = req.body;
+        const booking = await Booking.findById(bookingId);
+
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
         }
 
-        // First verify the payment with PayPal
-        const verificationResult = await paypalService.executePayment(paymentId, PayerID);
+        const paymentDetails = await paypalService.getPaymentDetails(paymentId);
         
-        if (verificationResult.state === "approved") {
-            // Find the booking associated with this payment
-            const booking = await Booking.findOne({ paypalPaymentId: paymentId });
-            
-            if (booking) {
-                booking.paymentStatus = 'paid';
-                await booking.save();
-            }
-
-            res.status(200).json({
-                status: 'success',
-                message: 'Payment verified successfully'
-            });
+        if (paymentDetails.status === "COMPLETED") {
+            booking.paymentStatus = "paid";
+            await booking.save();
+            res.status(200).json({ message: "Payment verified successfully" });
         } else {
-            res.status(400).json({
-                status: 'failed',
-                message: 'Payment verification failed'
-            });
+            res.status(400).json({ message: "Payment verification failed" });
         }
     } catch (error) {
-        console.error('🚨 Payment Verification Error:', error);
-        // Check if it's a PayPal API error
-        if (error.response?.data?.message) {
-            return res.status(400).json({
-                status: 'error',
-                message: error.response.data.message
-            });
-        }
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to verify payment'
-        });
+        console.error("🚨 Payment Verification Error:", error);
+        res.status(500).json({ message: "Failed to verify payment" });
     }
 };
 
@@ -157,7 +112,42 @@ exports.cancelPayment = async (req, res) => {
 
 
 
+exports.initiatePayment = async (req, res) => {
+    try {
+        const { bookingId } = req.body;
 
+        // Find booking and populate user details
+        const booking = await Booking.findById(bookingId).populate({
+            path: "user",
+            select: "email"
+        });
+
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
+        }
+
+        if (booking.paymentStatus === "paid") {
+            return res.status(400).json({ message: "Booking is already paid" });
+        }
+
+        // Create PayPal payment
+        const paymentData = await paypalService.createPayment(booking);
+
+        // Store PayPal payment ID in booking
+        booking.paypalPaymentId = paymentData.paymentId;
+        await booking.save();
+
+        // Return the PayPal approval URL
+        res.status(200).json({
+            message: "Payment initiated",
+            approvalUrl: paymentData.approvalUrl
+        });
+
+    } catch (error) {
+        console.error("🚨 Payment Initiation Error:", error);
+        res.status(500).json({ message: "Failed to initiate payment" });
+    }
+};
 
 exports.handlePaymentSuccess = async (req, res) => {
     try {
