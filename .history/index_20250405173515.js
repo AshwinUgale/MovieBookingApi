@@ -20,17 +20,7 @@ dotenv.config();
 // app.use('/', testRedisRoutes);
 
 const app = express()
-app.get('/ping-db', async (req, res) => {
-    const mongoose = require('mongoose');
-    try {
-      await mongoose.connection.db.admin().ping();
-      res.send('✅ MongoDB is alive');
-    } catch (e) {
-      console.error(e);
-      res.status(500).send('❌ MongoDB connection failed');
-    }
-  });
-  
+
 app.use(express.json());
 app.use(cors());
 

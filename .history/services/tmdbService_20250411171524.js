@@ -55,8 +55,7 @@ const fetchMoviesFromAPI = async () => {
             api_key: config.TMDB_API_KEY, // ✅ This is the v3 method
           },
         });
-        console.log("📦 TMDB API KEY in use:", config.TMDB_API_KEY);
-
+        
 
         const movies = response.data.results;
         // Don't delete existing movies, update them or add new ones

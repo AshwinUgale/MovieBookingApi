@@ -2,7 +2,7 @@ const axios = require("axios");
 const config = require("../config/config");
 const Movie = require("../models/Movie");
 
-const TMDB_MOVIES_URL = "https://api.themoviedb.org/3/movie/popular";
+const TMDB_MOVIES_URL = "https://api.themoviedb.org/3/movie/popular?language=en-US&page=1";
 const TMDB_GENRES_URL = "https://api.themoviedb.org/3/genre/movie/list?language=en-US";
 
 /**
@@ -55,8 +55,7 @@ const fetchMoviesFromAPI = async () => {
             api_key: config.TMDB_API_KEY, // ✅ This is the v3 method
           },
         });
-        console.log("📦 TMDB API KEY in use:", config.TMDB_API_KEY);
-
+        
 
         const movies = response.data.results;
         // Don't delete existing movies, update them or add new ones
