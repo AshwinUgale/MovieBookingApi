@@ -4,7 +4,7 @@ const MovieSchema = new mongoose.Schema({
   tmdbId: { type: Number, unique: true }, // Unique TMDb movie ID
   title: { type: String, required: true },
   originalTitle: { type: String, required: true },
-  overview: { type: String, required: true },
+  overview: { type: String, required: false },
   posterUrl: { type: String, required: true },
   backdropUrl: { type: String }, // Background image for UI
   mediaType: { type: String, default: "movie" }, // Can be movie, TV show, etc.

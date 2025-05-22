@@ -116,6 +116,9 @@ exports.createBooking = async (req, res) => {
 
         // Initiate payment
         const paymentData = await paypalService.createPayment(booking);
+        booking.paypalPaymentId = paymentData.id; // Store PayPal ID returned
+        await booking.save(); // Save again with updated info
+
 
         // Return populated booking data with payment URL
         console.log("📤 Fetching populated booking data");

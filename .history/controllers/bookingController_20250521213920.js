@@ -1,10 +1,10 @@
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Showtime = require('../models/Showtime');
-const redisClient = require('../config/redis');
 const sendEmail = require('../utils/emailService');
 const User = require('../models/User');
 const { fetchEvents } = require('../services/ticketmasterService');
+const paypalService = require('../services/paypalservice');
 
 
 // ... existing code ...
@@ -116,6 +116,9 @@ exports.createBooking = async (req, res) => {
 
         // Initiate payment
         const paymentData = await paypalService.createPayment(booking);
+        booking.paypalPaymentId = paymentData.id; // Store PayPal ID returned
+        await booking.save(); // Save again with updated info
+
 
         // Return populated booking data with payment URL
         console.log("📤 Fetching populated booking data");
