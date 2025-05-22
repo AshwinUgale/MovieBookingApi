@@ -5,13 +5,13 @@ on:
     branches:
       - main
 
+env:
+  IMAGE_NAME: ashwin1121/backend
+  TAG: v${{ github.run_number }}
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    env:
-      IMAGE_NAME: ashwin1121/backend
-      TAG: v${{ github.run_number }}
 
     steps:
       - name: Checkout source code
@@ -39,8 +39,25 @@ jobs:
           docker build -t $IMAGE_NAME:$TAG .
           docker push $IMAGE_NAME:$TAG
 
-      # Optional: Trigger deploy via GKE or another mechanism
-      # - name: Deploy to GKE
-      #   run: |
-      #     gcloud container clusters get-credentials ...
-      #     kubectl set image deployment/backend backend=$IMAGE_NAME:$TAG
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install GKE Auth Plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} \
+            --zone ${{ secrets.GKE_CLUSTER_ZONE }} \
+            --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy to GKE
+        run: |
+          kubectl set image deployment/backend backend=$IMAGE_NAME:$TAG
