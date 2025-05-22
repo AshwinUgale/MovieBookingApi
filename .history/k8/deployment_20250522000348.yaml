@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: ashwin1121/backend:lastest
+
+          ports:
+            - containerPort: 5000
+          env:
+            - name: MONGO_URI
+              value: mongodb+srv://ugaleashwin:Ashwinmongodb@cluster0.klpxux7.mongodb.net/moviebooking?retryWrites=true&w=majority&appName=Cluster0
+            - name: JWT_SECRET
+              value: "supersecret"
+            - name: REDIS_URL
+              value: ""
+            - name: SPRING_BOOT_URL
+              value: "http://spring-service:8080"
+            - name: CLIENT_URL
+              value: "http://34.173.217.12"
+            - name: TMDB_API_KEY
+              value: "c98f59f371d5a368d7f222153bd0436a"
+            - name: TICKETMASTER_API_KEY
+              value: "T49lub1hRMFhs9OPHIkSBZBT8DM6krxc"
+
+
