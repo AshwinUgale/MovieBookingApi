@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ashwin1121/backend:lastest
+          image: ashwin1121/backend:v5
 
           ports:
             - containerPort: 5000
