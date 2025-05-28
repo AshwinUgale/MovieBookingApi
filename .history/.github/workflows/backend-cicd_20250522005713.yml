@@ -61,7 +61,3 @@ jobs:
       - name: Deploy to GKE
         run: |
           kubectl set image deployment/backend backend=$IMAGE_NAME:$TAG
-          kubectl set env deployment/backend \
-            MONGO_URI=${{ secrets.MONGO_URI }} \
-            JWT_SECRET=${{ secrets.JWT_SECRET }} \
-            REDIS_URL=${{ secrets.REDIS_URL }}

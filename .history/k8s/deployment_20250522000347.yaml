@@ -14,11 +14,17 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ashwin1121/backend:v5
+          image: ashwin1121/backend:lastest
 
           ports:
             - containerPort: 5000
           env:
+            - name: MONGO_URI
+              value: mongodb+srv://ugaleashwin:Ashwinmongodb@cluster0.klpxux7.mongodb.net/moviebooking?retryWrites=true&w=majority&appName=Cluster0
+            - name: JWT_SECRET
+              value: "supersecret"
+            - name: REDIS_URL
+              value: ""
             - name: SPRING_BOOT_URL
               value: "http://spring-service:8080"
             - name: CLIENT_URL
