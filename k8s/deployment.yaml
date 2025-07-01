@@ -22,7 +22,7 @@ spec:
             - name: SPRING_BOOT_URL
               value: "http://spring-service:8080"
             - name: CLIENT_URL
-              value: "http://34.173.217.12"
+              value: "http://34.61.7.183"
             - name: TMDB_API_KEY
               value: "c98f59f371d5a368d7f222153bd0436a"
             - name: TICKETMASTER_API_KEY
